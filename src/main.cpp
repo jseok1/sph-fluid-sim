@@ -9,6 +9,16 @@
 #include "ComputeShader.hpp"
 #include "RenderShader.hpp"
 
+const float fovy = 45.0f;
+const int width = 1920;
+const int height = 1080;
+const float near = 0.1f;
+const float far = 10.0f;
+const bool throttle = true;
+
+const float speed = 5.0f;
+const float sensitivity = 0.05f;
+
 struct State {
   bool isMovingForward = false;
   bool isMovingBackward = false;
@@ -17,7 +27,7 @@ struct State {
   bool isMovingUpward = false;
   bool isMovingDownward = false;
 
-  Camera camera = Camera(45.0);
+  Camera camera = Camera(fovy, width, height, near, far);
 } state;
 
 bool firstMouse = true;
@@ -34,16 +44,12 @@ void processMouse(GLFWwindow* window, double currXCoord, double currYCoord) {
     firstMouse = false;
   }
 
-  double xOffset = currXCoord - prevXCoord;
-  double yOffset = -(currYCoord - prevYCoord);
+  glm::vec2 delta = glm::vec2(-(currYCoord - prevYCoord), currXCoord - prevXCoord) * sensitivity;
+
+  state.camera.rotateBy(delta);
+
   prevXCoord = currXCoord;
   prevYCoord = currYCoord;
-
-  const float sensitivity = 0.05f;
-  xOffset *= sensitivity;
-  yOffset *= sensitivity;
-
-  state.camera.rotate(xOffset, yOffset);
 }
 
 void processKey(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -116,10 +122,8 @@ int main() {
 #ifdef __APPLE__
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
-  const int width = 1920;
-  const int height = 1080;
 
-  GLFWwindow* window = glfwCreateWindow(width, height, "Sphere Tracing", nullptr, nullptr);
+  GLFWwindow* window = glfwCreateWindow(width, height, "🌊🌊🌊", nullptr, nullptr);
   if (!window) {
     return 1;
   }
@@ -130,14 +134,15 @@ int main() {
   glfwSetCursorPosCallback(window, processMouse);
   glfwSetKeyCallback(window, processKey);
 
-  // glfwSwapInterval(0);  // disable frame limiting
+  if (!throttle) {
+    glfwSwapInterval(0);
+  }
 
   if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
     return 1;
   }
 
   // make texture
-  const unsigned int TEXTURE_WIDTH = width, TEXTURE_HEIGHT = height;  // ? this used to be 512 x 512
   unsigned int texture;
 
   glGenTextures(1, &texture);
@@ -147,15 +152,15 @@ int main() {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexImage2D(
-    GL_TEXTURE_2D, 0, GL_RGBA32F, TEXTURE_WIDTH, TEXTURE_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL
-  );
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
 
   glBindImageTexture(0, texture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
 
   // make shader
-  ComputeShader computeShader{"./res/shaders/compute.glsl"};
-  RenderShader renderShader{"./res/shaders/vert.glsl", "./res/shaders/frag.glsl"};
+  ComputeShader computeShader{"./assets/shaders/screen.comp.glsl"};
+  RenderShader renderShader{
+    "./assets/shaders/screen.vert.glsl", "./assets/shaders/screen.frag.glsl"
+  };
   renderShader.use();
   renderShader.uniform("tex", 0);
 
@@ -181,40 +186,32 @@ int main() {
   glEnableVertexAttribArray(1);
   glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
 
-  double deltaTime = 0.01666666666;
-  double prevTime = glfwGetTime();
-  double accumulatedTime = 0.0;
-
-  int frameCount = 0;
-
-  const float speed = 5.0f * deltaTime;
+  float deltaTime = 1.0f / 60.0f;
+  float prevTime = glfwGetTime();
+  float accumulatedTime = 0.0f;
 
   while (!glfwWindowShouldClose(window)) {
-    double currTime = glfwGetTime();
+    auto origin = state.camera.origin();
+    auto [u, v, w] = state.camera.basis();
+
+    float currTime = glfwGetTime();
     accumulatedTime += currTime - prevTime;
     prevTime = currTime;
 
-    if (frameCount > 500) {
-      // std::cout << "FPS: " << 1 / (currTime - prevTime) << std::endl;
-      frameCount = 0;
-    } else {
-      frameCount++;
-    }
-
     while (accumulatedTime >= deltaTime) {
-      glm::vec3 deltaOrigin{0.0, 0.0, 0.0};
-      if (state.isMovingForward) deltaOrigin -= state.camera.backward * speed;
-      if (state.isMovingBackward) deltaOrigin += state.camera.backward * speed;
-      if (state.isMovingLeftward) deltaOrigin -= state.camera.rightward * speed;
-      if (state.isMovingRightward) deltaOrigin += state.camera.rightward * speed;
-      if (state.isMovingDownward) deltaOrigin -= state.camera.upward * speed;
-      if (state.isMovingUpward) deltaOrigin += state.camera.upward * speed;
-      state.camera.translate(deltaOrigin);
+      glm::vec3 delta = glm::vec3(0.0);
+      if (state.isMovingForward) delta -= w * speed * deltaTime;
+      if (state.isMovingBackward) delta += w * speed * deltaTime;
+      if (state.isMovingLeftward) delta -= u * speed * deltaTime;
+      if (state.isMovingRightward) delta += u * speed * deltaTime;
+      if (state.isMovingDownward) delta -= v * speed * deltaTime;
+      if (state.isMovingUpward) delta += v * speed * deltaTime;
+      state.camera.translateBy(delta);
 
       accumulatedTime -= deltaTime;
     }
 
-    glClearColor(0.7f, 0.7f, 0.7f, 1.0f);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
@@ -222,15 +219,19 @@ int main() {
 
     // use compute shader
     computeShader.use();
-    computeShader.uniform("camera.origin", state.camera.origin);
-    computeShader.uniform("camera.rightward", state.camera.rightward);
-    computeShader.uniform("camera.upward", state.camera.upward);
-    computeShader.uniform("camera.backward", state.camera.backward);
-    computeShader.uniform("camera.fov", state.camera.fov);
-    glDispatchCompute((unsigned int)TEXTURE_WIDTH, (unsigned int)TEXTURE_HEIGHT, 1);
+    computeShader.uniform("camera.origin", origin);
+    computeShader.uniform("camera.u", u);
+    computeShader.uniform("camera.v", v);
+    computeShader.uniform("camera.w", w);
+    computeShader.uniform("camera.fovy", fovy);
+    glDispatchCompute((unsigned int)width, (unsigned int)height, 1);
 
     // make sure writing to image has finished before read
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+    computeShader.uniform("camera.u", u);
+    computeShader.uniform("camera.v", v);
+    computeShader.uniform("camera.w", w);
 
     //
     renderShader.use();
