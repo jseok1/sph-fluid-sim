@@ -17,3 +17,6 @@ https://matthias-research.github.io/pages/publications/sca03.pdf
 https://sph-tutorial.physics-simulation.org/pdf/SPH_Tutorial.pdf
 
 screen space shader?
+
+Gotcha:
+In std430, vec3's are padded to be vec4's.

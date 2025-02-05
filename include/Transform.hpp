@@ -12,17 +12,29 @@ class Transform {
 
   Transform() : translation{glm::vec3(0.0f)}, rotation{glm::vec3(0.0f)}, scale{glm::vec3(1.0f)} {};
 
-  void translateBy(glm::vec3 delta) {
-    translation += delta;
+  void translateBy(glm::vec3 by) {
+    translation += by;
   };
 
-  void rotateBy(glm::vec3 delta) {
-    rotation += delta;
+  void translateTo(glm::vec3 to) {
+    translation = to;
+  };
+
+  void rotateBy(glm::vec3 by) {
+    rotation += by;
     rotation = glm::mod(rotation + 180.0f, 360.0f) - 180.0f;
   };
 
-  void scaleBy(glm::vec3 delta) {
-    scale *= delta;
+  void rotateTo(glm::vec3 to) {
+    rotation = glm::mod(to + 180.0f, 360.0f) - 180.0f;
+  };
+
+  void scaleBy(glm::vec3 by) {
+    scale *= by;
+  };
+
+  void scaleTo(glm::vec3 to) {
+    scale *= to;
   };
 
   glm::mat4 model() {

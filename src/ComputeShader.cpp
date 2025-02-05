@@ -10,6 +10,8 @@
 #include <stdexcept>
 #include <string>
 
+ComputeShader::ComputeShader() {}
+
 ComputeShader::ComputeShader(const std::string& computeShaderPath) {
   GLuint computerShaderId = compile(GL_COMPUTE_SHADER, computeShaderPath);
   link(computerShaderId);
@@ -17,6 +19,11 @@ ComputeShader::ComputeShader(const std::string& computeShaderPath) {
 
 ComputeShader::~ComputeShader() {
   glDeleteProgram(programId);
+}
+
+void ComputeShader::build(const std::string& computeShaderPath) {
+  GLuint computerShaderId = compile(GL_COMPUTE_SHADER, computeShaderPath);
+  link(computerShaderId);
 }
 
 GLuint ComputeShader::compile(GLenum shaderType, const std::string& shaderPath) {

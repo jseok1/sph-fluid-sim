@@ -19,14 +19,36 @@ class Camera {
     return std::make_tuple(u, v, w);
   }
 
-  void translateBy(glm::vec3 delta) {
-    transform.translateBy(delta);
+  void translateBy(glm::vec3 by) {
+    transform.translateBy(by);
   };
 
-  void rotateBy(glm::vec2 delta) {
-    delta.x = glm::clamp(transform.rotation.x + delta.x, -89.0f, 89.0f) - transform.rotation.x;
+  void translateTo(glm::vec3 to) {
+    transform.translateTo(to);
+  };
 
-    transform.rotateBy(glm::vec3(delta, 0.0));
+  void rotateBy(glm::vec2 by) {
+    by.x = glm::clamp(transform.rotation.x + by.x, -89.0f, 89.0f) - transform.rotation.x;
+
+    transform.rotateBy(glm::vec3(by, 0.0));
+
+    w = glm::vec3(
+      -glm::cos(glm::radians(transform.rotation.y)) * glm::cos(glm::radians(transform.rotation.x)),
+      -glm::sin(glm::radians(transform.rotation.x)),
+      -glm::sin(glm::radians(transform.rotation.y)) * glm::cos(glm::radians(transform.rotation.x))
+    );
+    u = glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), w);
+    v = glm::cross(w, u);
+
+    u = glm::normalize(u);
+    v = glm::normalize(v);
+    w = glm::normalize(w);
+  };
+
+  void rotateTo(glm::vec2 to) {
+    to.x = glm::clamp(to.x, -89.0f, 89.0f);
+
+    transform.rotateTo(glm::vec3(to, 0.0));
 
     w = glm::vec3(
       -glm::cos(glm::radians(transform.rotation.y)) * glm::cos(glm::radians(transform.rotation.x)),

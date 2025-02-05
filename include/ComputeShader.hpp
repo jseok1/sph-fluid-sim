@@ -8,8 +8,11 @@
 // could use overloading to combine with vert/frag
 class ComputeShader {
  public:
+  ComputeShader();
   ComputeShader(const std::string& computeShaderPath);
   ~ComputeShader();
+
+  void build(const std::string& computeShaderPath);
 
   void use();
   void uniform(const std::string& uniformId, bool uniform) const;
