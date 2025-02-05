@@ -20,9 +20,9 @@ class Fluid {
       for (int j = 0; j < num_y; j++) {
         for (int k = 0; k < num_z; k++) {
           Particle particle;
-          particle.mass = 0.001f;
-          particle.density = 2.0f;
-          particle.volume = 3.0f;
+          particle.mass = 0.1f;  // water has a density of 998 kg/m^3
+          particle.density = 0.0f;
+          particle.volume = 0.0f;
           particle.position[0] = static_cast<float>(i) / num_x * 5.0f - 2.5f;
           particle.position[1] = static_cast<float>(j) / num_y * 2.5f - 1.25f;
           particle.position[2] = static_cast<float>(k) / num_z * 2.5f - 1.25f;

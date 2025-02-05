@@ -12,8 +12,10 @@ add_executable(${PROJECT_NAME} ${SOURCE_FILES})
 
 target_include_directories(${PROJECT_NAME} PRIVATE include)
 
+find_package(assimp REQUIRED)
 find_package(glad REQUIRED)
 find_package(glfw3 REQUIRED)  
 find_package(glm REQUIRED)
-target_link_libraries(${PROJECT_NAME} PRIVATE glfw glm::glm)
+find_package(stb REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE assimp::assimp glfw glm::glm stb::stb)
 target_link_libraries(${PROJECT_NAME} PUBLIC glad::glad)

@@ -25,7 +25,19 @@ void main() {
   vec3 position =
     vec3(particles[i].position[0], particles[i].position[1], particles[i].position[2]);
 
-  gl_Position = projection * view * vec4(aPos + position, 1.0);
+  // TODO: scaling transformation should be done with transform class in C++
+  // clang-format off
+  mat4 model = mat4(
+           0.1,        0.0,        0.0, 0.0,
+           0.0,        0.1,        0.0, 0.0,
+           0.0,        0.0,        0.1, 0.0,
+    position.x, position.y, position.z, 1.0
+  );
+  // clang-format on
 
-  aColor = normalize(vec3(particles[i].velocity[0], particles[i].velocity[1], particles[i].velocity[2]) / 2.0 + 0.5);
+  gl_Position = projection * view * model * vec4(aPos, 1.0);
+
+  aColor = normalize(
+    vec3(particles[i].velocity[0], particles[i].velocity[1], particles[i].velocity[2]) / 2.0 + 0.5
+  );
 }

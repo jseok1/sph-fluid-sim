@@ -8,6 +8,7 @@
 #include "Camera.hpp"
 #include "ComputeShader.hpp"
 #include "Fluid.hpp"
+#include "Model.hpp"
 #include "RenderShader.hpp"
 
 const float fovy = 45.0f;
@@ -149,7 +150,7 @@ int main() {
 
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_MULTISAMPLE);
-  // glEnable(GL_CULL_FACE);
+  glEnable(GL_CULL_FACE);
 
   state.camera = Camera(fovy, width, height, near, far);  // bad
   state.camera.translateTo(glm::vec3(0.0, 0.0, 10.0));
@@ -213,27 +214,29 @@ int main() {
     return 1;
   }
 
-  unsigned int particleVAO;
-  unsigned int particleVBO;
-  float particleVertices[] = {
-    // clang-format off
-    -0.1f,  0.1f, 0.0f,
-    -0.1f, -0.1f, 0.0f,
-     0.1f,  0.1f, 0.0f,
-     0.1f, -0.1f, 0.0f,
-    // clang-format on
-  };
-  glGenVertexArrays(1, &particleVAO);
-  glGenBuffers(1, &particleVBO);
-  glBindVertexArray(particleVAO);
-  glBindBuffer(GL_ARRAY_BUFFER, particleVBO);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(particleVertices), particleVertices, GL_DYNAMIC_DRAW);
-  glEnableVertexAttribArray(0);
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-  glBindVertexArray(0);
+  Model particle{"./assets/models/particle.obj", NormalType::__VERT_NORMAL};
+
+  // unsigned int particleVAO;
+  // unsigned int particleVBO;
+  // float particleVertices[] = {
+  //   // clang-format off
+  //   -0.1f,  0.1f, 0.0f,
+  //   -0.1f, -0.1f, 0.0f,
+  //    0.1f,  0.1f, 0.0f,
+  //    0.1f, -0.1f, 0.0f,
+  //   // clang-format on
+  // };
+  // glGenVertexArrays(1, &particleVAO);
+  // glGenBuffers(1, &particleVBO);
+  // glBindVertexArray(particleVAO);
+  // glBindBuffer(GL_ARRAY_BUFFER, particleVBO);
+  // glBufferData(GL_ARRAY_BUFFER, sizeof(particleVertices), particleVertices, GL_DYNAMIC_DRAW);
+  // glEnableVertexAttribArray(0);
+  // glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+  // glBindVertexArray(0);
 
   // particles (dims should be a multiple of two)
-  const int fluidX = 8;
+  const int fluidX = 16;
   const int fluidY = 8;
   const int fluidZ = 8;
   const int nParticles = fluidX * fluidY * fluidZ;
@@ -249,6 +252,9 @@ int main() {
     GL_DYNAMIC_DRAW
   );
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particlesSSBO);
+
+  // param
+  float smoothingRadius = 5.0f;
 
   // box
   float tankLength = 5.0;
@@ -327,12 +333,14 @@ int main() {
       simulation1.use();
       simulation1.uniform("deltaTime", deltaTime);
       simulation1.uniform("nParticles", nParticles);
+      simulation1.uniform("smoothingRadius", smoothingRadius);
       glDispatchCompute((unsigned int)nParticles / 128, 1, 1);
       glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
       simulation2.use();
       simulation2.uniform("deltaTime", deltaTime);
       simulation2.uniform("nParticles", nParticles);
+      simulation2.uniform("smoothingRadius", smoothingRadius);
       simulation2.uniform("tankLength", tankLength);
       simulation2.uniform("tankHeight", tankHeight);
       simulation2.uniform("tankWidth", tankWidth);
@@ -361,9 +369,10 @@ int main() {
     shader.uniform("view", state.camera.view());
     shader.uniform("projection", state.camera.projection());
 
-    glBindVertexArray(particleVAO);
-    glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, nParticles);
-    glBindVertexArray(0);
+    particle.draw(nParticles);
+    // glBindVertexArray(particleVAO);
+    // glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, nParticles);
+    // glBindVertexArray(0);
 
     tank.use();
     tank.uniform("model", glm::mat4(1.0));

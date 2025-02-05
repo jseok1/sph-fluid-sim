@@ -15,30 +15,37 @@ layout(std430, binding = 0) buffer ParticleBuffer {
 };
 
 uniform int nParticles;
+uniform float smoothingRadius;
 
 const float pi = 3.1415926535;
 
-float poly6(vec3 origin, float radius, vec3 position) {
-  return 315.0 * pow(max(0.0, pow(radius, 2) - pow(length(origin - position), 2)), 3) /
-         (64.0 * pi * pow(radius, 9));
+float poly6(vec3 origin, vec3 position) {
+  float distance = distance(origin, position);
+  float b = max(0.0, smoothingRadius * smoothingRadius - distance * distance);
+  return 315.0 * b * b * b / (64.0 * pi * pow(smoothingRadius, 9));
 }
 
 float density(uint i) {
   float density = 0.0;
   for (uint j = 0; j < nParticles; j++) {
+    if (j == i) continue; // correct?
+
     density += particles[j].mass *
                poly6(
                  vec3(particles[i].position[0], particles[i].position[1], particles[i].position[2]),
-                 10.0,
                  vec3(particles[j].position[0], particles[j].position[1], particles[j].position[2])
                );
   }
   return density;
 }
 
+float volume(uint i) {
+  return particles[i].mass / particles[i].density;
+}
+
 void main() {
   uint i = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y + gl_GlobalInvocationID.z;
 
   particles[i].density = density(i);
-  particles[i].volume = particles[i].mass / particles[i].density;
+  particles[i].volume = volume(i);
 }

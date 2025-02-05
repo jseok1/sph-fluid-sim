@@ -8,12 +8,9 @@
 #include <vector>
 
 #include "RenderShader.hpp"
-#include "Texture.hpp"
 
 struct Vertex {
   glm::vec3 position;
-  glm::vec3 normal;
-  glm::vec2 textureCoords;
 };
 
 class Mesh {
@@ -21,14 +18,8 @@ class Mesh {
   std::vector<Vertex> vertices;
   std::vector<unsigned int> indices;
 
-  std::vector<Texture> textures;
-
-  Mesh(
-    std::vector<Vertex> vertices,
-    std::vector<unsigned int> indices,
-    std::vector<Texture> textures
-  )
-    : vertices{vertices}, indices{indices}, textures{textures} {
+  Mesh(std::vector<Vertex> vertices, std::vector<unsigned int> indices)
+    : vertices{vertices}, indices{indices} {
     // VAO is always for a target shader (multiple VAOs can use the same shader but this isn't
     // really necessary) VAOs: track attribs
     //
@@ -85,27 +76,18 @@ class Mesh {
       0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, position)
     );
 
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(
-      1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal)
-    );
-
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(
-      2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, textureCoords)
-    );
-
     glBindVertexArray(0);
   }
 
   void draw() {
-    for (int i = 0; i < textures.size(); i++) {
-      auto& texture = textures[i];
-      texture.use(GL_TEXTURE0 + i);
-    }
-
     glBindVertexArray(VAO);
     glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+  }
+
+  void draw(int nInstances) {
+    glBindVertexArray(VAO);
+    glDrawElementsInstanced(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0, nInstances);
     glBindVertexArray(0);
   }
 
