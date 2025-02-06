@@ -1,9 +1,25 @@
 #version 460 core
 
-in vec3 aColor;
+struct Light {
+  vec3 origin;
+  vec3 color;
+};
 
-out vec4 FragColor;
+in vec3 fColor;
+in vec3 fPosition;
+in vec3 fNormal;
+
+out vec4 color;
 
 void main() {
-  FragColor = vec4(aColor, 1.0);
+  Light light;
+  light.origin = vec3(10.0, 10.0, 10.0);
+  light.color = vec3(1.0, 1.0, 1.0);
+
+  vec3 lightDir = normalize(light.origin - fPosition);
+
+  vec3 ambient = light.color * fColor * 0.5;
+  vec3 diffuse = light.color * fColor * max(dot(normalize(fNormal), lightDir), 0.0);
+
+  color = vec4(ambient + diffuse, 1.0);
 }

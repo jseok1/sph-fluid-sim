@@ -14,6 +14,7 @@ layout(std430, binding = 0) buffer ParticleBuffer {
   Particle particles[];
 };
 
+uniform float deltaTime;
 uniform int nParticles;
 uniform float smoothingRadius;
 
@@ -26,9 +27,16 @@ float poly6(vec3 origin, vec3 position) {
 }
 
 float density(uint i) {
+  vec3 predicted_position_i =
+    vec3(particles[i].position[0], particles[i].position[1], particles[i].position[2]) +
+    vec3(particles[i].velocity[0], particles[i].velocity[1], particles[i].velocity[2]) * deltaTime;
+
   float density = 0.0;
   for (uint j = 0; j < nParticles; j++) {
-    if (j == i) continue; // correct?
+    vec3 predicted_position_j =
+      vec3(particles[j].position[0], particles[j].position[1], particles[j].position[2]) +
+      vec3(particles[j].velocity[0], particles[j].velocity[1], particles[j].velocity[2]) *
+        deltaTime;
 
     density += particles[j].mass *
                poly6(

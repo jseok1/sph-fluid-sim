@@ -20,16 +20,17 @@ uniform float smoothingRadius;
 uniform float tankLength;
 uniform float tankWidth;
 uniform float tankHeight;
+uniform float time;
 
 const float pi = 3.1415926535;
 const float gravity = 9.81;
 const float gas = 8.31;
 
-vec3 random_dir(vec3 seed) {
+vec3 random_dir() {
   return vec3(
-    fract(sin(dot(seed.xy, vec2(12.9898, 78.233))) * 43758.5453),
-    fract(sin(dot(seed.yz, vec2(12.9898, 78.233))) * 43758.5453),
-    fract(sin(dot(seed.zx, vec2(12.9898, 78.233))) * 43758.5453)
+    fract(sin(dot(gl_GlobalInvocationID.xy + time, vec2(12.9898, 78.233))) * 43758.5453),
+    fract(sin(dot(gl_GlobalInvocationID.yz + time, vec2(12.9898, 78.233))) * 43758.5453),
+    fract(sin(dot(gl_GlobalInvocationID.zx + time, vec2(12.9898, 78.233))) * 43758.5453)
   );
 }
 
@@ -40,13 +41,17 @@ float poly6(vec3 origin, vec3 position) {
 }
 
 vec3 grad_spiky(vec3 origin, vec3 position) {
-  vec3 dir = origin != position ? normalize(origin - position) : normalize(random_dir(origin));
+  vec3 dir = origin != position ? normalize(origin - position) : normalize(random_dir());
   float b = max(0.0, smoothingRadius - distance(origin, position));
-  return -45.0 / pi / pow(smoothingRadius, 6) * b * b * dir;
+  return -45.0 / pi / pow(smoothingRadius, 6) * b * b * dir; // no minus here?
 }
 
+// vec3 lap_vis(vec3 origin, vec3 position) {
+
+// }
+
 float pressure(float density) {
-  float restDensity = 0.0;
+  float restDensity = 0.5;
   float pressure = gas * (density - restDensity);
   return pressure;
 }
@@ -54,22 +59,28 @@ float pressure(float density) {
 vec3 acceleration(uint i) {
   vec3 position_i =
     vec3(particles[i].position[0], particles[i].position[1], particles[i].position[2]);
+  vec3 velocity_i =
+    vec3(particles[i].velocity[0], particles[i].velocity[1], particles[i].velocity[2]);
 
   vec3 acceleration = vec3(0.0);
 
-  /** acceleration due to pressure */
   for (uint j = 0; j < nParticles; j++) {
     if (j == i) continue;
 
     vec3 position_j =
       vec3(particles[j].position[0], particles[j].position[1], particles[j].position[2]);
+    vec3 velocity_j =
+      vec3(particles[j].velocity[0], particles[j].velocity[1], particles[j].velocity[2]);
 
+    /** acceleration due to pressure */
     acceleration -= particles[j].volume *
                     (pressure(particles[i].density) + pressure(particles[j].density)) /
                     (2.0 * particles[i].density) * grad_spiky(position_i, position_j);
-  }
 
-  /** acceleration due to viscosity */
+    /** acceleration due to viscosity */
+    // acceleration -= particles[j].volume * (velocity_j - velocity_i) / particles[i].density *
+    //                 lap_vis(position_i, position_j);
+  }
 
   /** acceleration due to gravity */
   acceleration.y -= gravity;
@@ -88,19 +99,12 @@ void main() {
   velocity += acceleration(i) * deltaTime;
   position += velocity * deltaTime;
 
-  // no ifs?
-  if (abs(position.x) > tankLength) {
-    position.x = sign(position.x) * tankLength;
-    velocity.x *= -0.5;
-  }
-  if (abs(position.y) > tankHeight) {
-    position.y = sign(position.y) * tankHeight;
-    velocity.y *= -0.5;
-  }
-  if (abs(position.z) > tankWidth) {
-    position.z = sign(position.z) * tankWidth;
-    velocity.z *= -0.5;
-  }
+  velocity.x *= position.x < -tankLength || position.x > tankLength ? -0.5 : 1.0;
+  position.x = clamp(position.x, -tankLength, tankLength);
+  velocity.y *= position.y < -tankHeight || position.y > tankHeight ? -0.5 : 1.0;
+  position.y = clamp(position.y, -tankHeight, tankHeight);
+  velocity.z *= position.z < -tankWidth || position.z > tankWidth ? -0.5 : 1.0;
+  position.z = clamp(position.z, -tankWidth, tankWidth);
 
   particles[i].position[0] = position.x;
   particles[i].position[1] = position.y;

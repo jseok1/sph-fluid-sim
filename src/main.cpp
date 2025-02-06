@@ -254,7 +254,7 @@ int main() {
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particlesSSBO);
 
   // param
-  float smoothingRadius = 5.0f;
+  float smoothingRadius = 0.15f;
 
   // box
   float tankLength = 5.0;
@@ -334,6 +334,7 @@ int main() {
       simulation1.uniform("deltaTime", deltaTime);
       simulation1.uniform("nParticles", nParticles);
       simulation1.uniform("smoothingRadius", smoothingRadius);
+      simulation1.uniform("time", currTime);
       glDispatchCompute((unsigned int)nParticles / 128, 1, 1);
       glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
@@ -344,6 +345,7 @@ int main() {
       simulation2.uniform("tankLength", tankLength);
       simulation2.uniform("tankHeight", tankHeight);
       simulation2.uniform("tankWidth", tankWidth);
+      simulation2.uniform("time", currTime);
       glDispatchCompute((unsigned int)nParticles / 128, 1, 1);
       glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 

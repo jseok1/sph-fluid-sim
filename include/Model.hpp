@@ -76,6 +76,11 @@ class Model {
         vert.position.y = mesh->mVertices[i].y;
         vert.position.z = mesh->mVertices[i].z;
 
+        // normals
+        vert.normal.x = mesh->mNormals[i].x;
+        vert.normal.y = mesh->mNormals[i].y;
+        vert.normal.z = mesh->mNormals[i].z;
+
         vertices.push_back(vert);
       }
 
