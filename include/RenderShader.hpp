@@ -7,8 +7,11 @@
 
 class RenderShader {
  public:
+  RenderShader();
   RenderShader(const std::string& vertShaderPath, const std::string& fragShaderPath);
   ~RenderShader();
+
+  void build(const std::string& vertShaderPath, const std::string& fragShaderPath);
 
   void use();
   void uniform(const std::string& uniformId, bool uniform) const;

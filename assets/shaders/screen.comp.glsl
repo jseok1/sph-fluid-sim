@@ -11,7 +11,7 @@ struct Particle {
   float pressure;
 };
 
-layout(std430, binding = 0) buffer ParticleBuffer {
+layout(std430, binding = 0) buffer Particles {
   Particle particles[];
 };
 

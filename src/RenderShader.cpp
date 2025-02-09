@@ -11,6 +11,7 @@
 #include <string>
 
 // make GL_VERTEX_SHADER C++ enums?
+RenderShader::RenderShader() {}
 
 RenderShader::RenderShader(const std::string& vertShaderPath, const std::string& fragShaderPath) {
   GLuint vertShaderId = compile(GL_VERTEX_SHADER, vertShaderPath);
@@ -20,6 +21,12 @@ RenderShader::RenderShader(const std::string& vertShaderPath, const std::string&
 
 RenderShader::~RenderShader() {
   glDeleteProgram(programId);
+}
+
+void RenderShader::build(const std::string& vertShaderPath, const std::string& fragShaderPath) {
+  GLuint vertShaderId = compile(GL_VERTEX_SHADER, vertShaderPath);
+  GLuint fragShaderId = compile(GL_FRAGMENT_SHADER, fragShaderPath);
+  link(vertShaderId, fragShaderId);
 }
 
 GLuint RenderShader::compile(GLenum shaderType, const std::string& shaderPath) {
@@ -77,7 +84,8 @@ void RenderShader::uniform(const std::string& uniformId, bool uniform) const {
 
 void RenderShader::uniform(const std::string& uniformId, int uniform) const {
   GLint uniformLocation = glGetUniformLocation(programId, uniformId.c_str());
-  // if (uniformLocation == -1) throw std::runtime_error("RenderShader::UNIFORM:NOT_FOUND " + uniformId);
+  // if (uniformLocation == -1) throw std::runtime_error("RenderShader::UNIFORM:NOT_FOUND " +
+  // uniformId);
   glUniform1i(uniformLocation, uniform);
 }
 

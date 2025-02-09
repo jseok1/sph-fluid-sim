@@ -7,8 +7,10 @@ struct Particle {
   float mass;
   float density;
   float volume;
+  float pressure;
   float position[3];
   float velocity[3];
+  unsigned int hash;
 };
 
 class Fluid {
@@ -20,15 +22,17 @@ class Fluid {
       for (int j = 0; j < num_y; j++) {
         for (int k = 0; k < num_z; k++) {
           Particle particle;
-          particle.mass = 0.001f;  // water has a density of 998 kg/m^3
+          particle.mass = 0.001f;
           particle.density = 0.0f;
           particle.volume = 0.0f;
-          particle.position[0] = static_cast<float>(i) / num_x * 5.0f - 2.5f;
-          particle.position[1] = static_cast<float>(j) / num_y * 2.5f - 1.25f;
-          particle.position[2] = static_cast<float>(k) / num_z * 2.5f - 1.25f;
+          particle.pressure = 0.0f;
+          particle.position[0] = static_cast<float>(i) / num_x * 2.5f - 1.25f; // spacing should depend on smoothing radius
+          particle.position[1] = static_cast<float>(j) / num_y * 1.5f - 0.75f;
+          particle.position[2] = static_cast<float>(k) / num_z * 1.5f - 0.75f;
           particle.velocity[0] = 0.0f;
           particle.velocity[1] = 0.0f;
           particle.velocity[2] = 0.0f;
+          particle.hash = 0;
 
           particles.push_back(particle);
         }

@@ -6,25 +6,84 @@ struct Particle {
   float mass;
   float density;
   float volume;
+  float pressure;
   float position[3];
   float velocity[3];
+  uint hash;
 };
 
-layout(std430, binding = 0) buffer ParticleBuffer {
+layout(std430, binding = 0) buffer Particles {
   Particle particles[];
+};
+
+layout(std430, binding = 1) buffer Hashes {
+  uint offsets[];
 };
 
 uniform float deltaTime;
 uniform int nParticles;
 uniform float smoothingRadius;
+uniform float lookAhead;
 uniform float tankLength;
 uniform float tankWidth;
 uniform float tankHeight;
 uniform float time;
 
 const float pi = 3.1415926535;
-const float gravity = 9.81;
-const float gas = 8.31;
+const float gravity = 9.81 * 0.1;
+const float viscosity = 0.0005;  // 0.001 mass, 0.0 rest density, 0.01 - 0.05 play around
+const float restDensity = 0.0;
+const float gas = 8.31 * 0.2;
+
+// uint hash(vec3 position) {
+//   uint hash = mod(
+//     (floor(position[0] / smoothingRadius) * 73856093) ^
+//       (floor(position[1] / smoothingRadius) * 19349663) ^
+//       (floor(position[2] / smoothingRadius) * 83492791),
+//     mHash
+//   );
+//   return hash;
+// }
+
+// // look into inout?
+// void neighbors(vec3 position) {
+//   // spatial hashing - open addressing via linear probing (requries nParticles slots or ideally like
+//   // 10x the memory) index sorting - nParticles slots, nGridCells slots <cell index, particle>
+//   // actually cell index is % len(startIndices), so startIndices can be any length
+//   // use handle idea (need to sort handles every step, and should also reorder particles on every
+//   // 100th step for cache locality) use insertion sort > radix sort for reordering handles. use
+//   // Z-sort idea? (kinda difficult with an infinte domain?), instead of sorting, reorder accoring to
+//   // Z-curve Imhsen et al. cites the memory consumption on infinite domains as a major drawback of
+//   // index sorting, but you don't need a cell index necessarily, use a cell hash which is allowed to
+//   // collide. ^ this is the idea behind spatial hashing.
+
+//   vec3 neighborhood[27] = {
+//     position + vec3(-1.0, -1.0, -1.0), position + vec3(-1.0, -1.0, 0.0),
+//     position + vec3(-1.0, -1.0, 1.0),  position + vec3(-1.0, 0.0, -1.0),
+//     position + vec3(-1.0, 0.0, 0.0),   position + vec3(-1.0, 0.0, 1.0),
+//     position + vec3(-1.0, 1.0, -1.0),  position + vec3(-1.0, 1.0, 0.0),
+//     position + vec3(-1.0, 1.0, 1.0),   position + vec3(0.0, -1.0, -1.0),
+//     position + vec3(0.0, -1.0, 0.0),   position + vec3(0.0, -1.0, 1.0),
+//     position + vec3(0.0, 0.0, -1.0),   position + vec3(0.0, 0.0, 0.0),
+//     position + vec3(0.0, 0.0, 1.0),    position + vec3(0.0, 1.0, -1.0),
+//     position + vec3(0.0, 1.0, 0.0),    position + vec3(0.0, 1.0, 1.0),
+//     position + vec3(1.0, -1.0, -1.0),  position + vec3(1.0, -1.0, 0.0),
+//     position + vec3(1.0, -1.0, 1.0),   position + vec3(1.0, 0.0, -1.0),
+//     position + vec3(1.0, 0.0, 0.0),    position + vec3(1.0, 0.0, 1.0),
+//     position + vec3(1.0, 1.0, -1.0),   position + vec3(1.0, 1.0, 0.0),
+//     position + vec3(1.0, 1.0, 1.0),
+//   };
+
+//   for (uint j = 0; j < 27; j++) {
+//     uint hash = hash(neighborhood[j]);
+//     uint offset = offsets[hash];
+
+//     uint k = offset;
+//     while (particles[k].hash == hash) {
+//       // ...some calculation...
+//     }
+//   }
+// }
 
 vec3 random_dir() {
   return vec3(
@@ -41,18 +100,47 @@ float poly6(vec3 origin, vec3 position) {
 }
 
 vec3 grad_spiky(vec3 origin, vec3 position) {
+  float distance = distance(origin, position);
   vec3 dir = origin != position ? normalize(origin - position) : normalize(random_dir());
-  float b = max(0.0, smoothingRadius - distance(origin, position));
-  return -45.0 / pi / pow(smoothingRadius, 6) * b * b * dir; // no minus here?
+  float b = max(0.0, smoothingRadius - distance);
+  return -45.0 / pi / pow(smoothingRadius, 6) * b * b * dir;
 }
 
-// vec3 lap_vis(vec3 origin, vec3 position) {
+float lap_vis(vec3 origin, vec3 position) {
+  float distance = distance(origin, position);
+  float b = max(0.0, smoothingRadius - distance);
+  return 45.0 / pi / pow(smoothingRadius, 6) * b;
+}
 
-// }
+float density(uint i) {
+  vec3 predicted_position_i =
+    vec3(particles[i].position[0], particles[i].position[1], particles[i].position[2]) +
+    vec3(particles[i].velocity[0], particles[i].velocity[1], particles[i].velocity[2]) * lookAhead;
 
-float pressure(float density) {
-  float restDensity = 0.5;
-  float pressure = gas * (density - restDensity);
+  float density = 0.0;
+  for (uint j = 0; j < nParticles; j++) {
+    vec3 predicted_position_j =
+      vec3(particles[j].position[0], particles[j].position[1], particles[j].position[2]) +
+      vec3(particles[j].velocity[0], particles[j].velocity[1], particles[j].velocity[2]) *
+        lookAhead;
+
+    density +=
+      particles[j].mass *
+      poly6(
+        predicted_position_i, predicted_position_j
+        //  vec3(particles[i].position[0], particles[i].position[1], particles[i].position[2]),
+        //  vec3(particles[j].position[0], particles[j].position[1], particles[j].position[2])
+      );
+  }
+  return density;
+}
+
+float volume(uint i) {
+  return particles[i].mass / particles[i].density;
+}
+
+float pressure(uint i) {
+  float pressure = gas * (particles[i].density - restDensity);
   return pressure;
 }
 
@@ -61,6 +149,8 @@ vec3 acceleration(uint i) {
     vec3(particles[i].position[0], particles[i].position[1], particles[i].position[2]);
   vec3 velocity_i =
     vec3(particles[i].velocity[0], particles[i].velocity[1], particles[i].velocity[2]);
+
+  vec3 predicted_position_i = position_i + velocity_i * lookAhead;
 
   vec3 acceleration = vec3(0.0);
 
@@ -72,14 +162,16 @@ vec3 acceleration(uint i) {
     vec3 velocity_j =
       vec3(particles[j].velocity[0], particles[j].velocity[1], particles[j].velocity[2]);
 
+    vec3 predicted_position_j = position_j + velocity_j * lookAhead;
+
     /** acceleration due to pressure */
-    acceleration -= particles[j].volume *
-                    (pressure(particles[i].density) + pressure(particles[j].density)) /
-                    (2.0 * particles[i].density) * grad_spiky(position_i, position_j);
+    acceleration -= particles[j].volume * (particles[i].pressure + particles[j].pressure) /
+                    (2.0 * particles[i].density) *
+                    grad_spiky(predicted_position_i, predicted_position_j);
 
     /** acceleration due to viscosity */
-    // acceleration -= particles[j].volume * (velocity_j - velocity_i) / particles[i].density *
-    //                 lap_vis(position_i, position_j);
+    acceleration += viscosity * particles[j].volume * (velocity_j - velocity_i) /
+                    particles[i].density * lap_vis(predicted_position_i, predicted_position_j);
   }
 
   /** acceleration due to gravity */
@@ -90,6 +182,12 @@ vec3 acceleration(uint i) {
 
 void main() {
   uint i = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y + gl_GlobalInvocationID.z;
+
+  particles[i].density = density(i);
+  particles[i].volume = volume(i);
+  particles[i].pressure = pressure(i);
+
+  barrier();
 
   vec3 position =
     vec3(particles[i].position[0], particles[i].position[1], particles[i].position[2]);

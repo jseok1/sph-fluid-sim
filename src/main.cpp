@@ -3,13 +3,16 @@
 #include <GLFW/glfw3.h>
 // clang-format on
 
+#include <array>
 #include <iostream>
+#include <vector>
 
 #include "Camera.hpp"
 #include "ComputeShader.hpp"
 #include "Fluid.hpp"
 #include "Model.hpp"
 #include "RenderShader.hpp"
+#include "Texture.hpp"
 
 const float fovy = 45.0f;
 int width = 1920;  // bad being overwritten
@@ -170,7 +173,7 @@ int main() {
 
   // glBindImageTexture(0, texture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
 
-  // // make shader
+  // // make particleShader
   // ComputeShader computeShader{"./assets/shaders/screen.comp"};
   // RenderShader renderShader{
   //   "./assets/shaders/screen.vert", "./assets/shaders/screen.frag"
@@ -199,22 +202,30 @@ int main() {
   // glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
   // glEnableVertexAttribArray(1);
   // glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
-
-  RenderShader shader{"./assets/shaders/particle.vert.glsl", "./assets/shaders/particle.frag.glsl"};
-  RenderShader tank{"./assets/shaders/tank.vert.glsl", "./assets/shaders/tank.frag.glsl"};
+  RenderShader particleShader;
+  RenderShader tankShader;
+  try {
+    particleShader.build(
+      "./assets/shaders/particle.vert.glsl", "./assets/shaders/particle.frag.glsl"
+    );
+    tankShader.build("./assets/shaders/tank.vert.glsl", "./assets/shaders/tank.frag.glsl");
+  } catch (const std::exception& err) {
+    std::cerr << err.what();
+    return 1;
+  }
 
   // TODO: wrap everything in the try-catch
-  ComputeShader simulation1;
-  ComputeShader simulation2;
+  ComputeShader simulation;
   try {
-    simulation1.build("./assets/shaders/simulation-step-pre.comp.glsl");
-    simulation2.build("./assets/shaders/simulation-step.comp.glsl");
+    simulation.build("./assets/shaders/simulation-step.comp.glsl");
   } catch (const std::exception& err) {
     std::cerr << err.what();
     return 1;
   }
 
   Model particle{"./assets/models/particle.obj", NormalType::__VERT_NORMAL};
+  Texture densityGradient{"./assets/textures/density-gradient.png"};
+  densityGradient.use(0);
 
   // unsigned int particleVAO;
   // unsigned int particleVBO;
@@ -237,8 +248,8 @@ int main() {
 
   // particles (dims should be a multiple of two)
   const int fluidX = 16;
-  const int fluidY = 8;
-  const int fluidZ = 8;
+  const int fluidY = 16;
+  const int fluidZ = 16;
   const int nParticles = fluidX * fluidY * fluidZ;
   Fluid fluid(fluidX, fluidY, fluidZ);
 
@@ -253,13 +264,27 @@ int main() {
   );
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particlesSSBO);
 
+  // hashes
+  const unsigned int mHash = 1024;
+  std::array<unsigned int, mHash> hashes;
+  hashes.fill(mHash);
+
+  unsigned int hashesSSBO;
+  glGenBuffers(1, &hashesSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, hashesSSBO);
+  glBufferData(
+    GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * hashes.size(), hashes.data(), GL_DYNAMIC_DRAW
+  );
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, hashesSSBO);
+
   // param
-  float smoothingRadius = 0.15f;
+  float smoothingRadius = 0.5f;
+  float lookAhead = 1.0f / 144.0f;
 
   // box
-  float tankLength = 5.0;
-  float tankWidth = 2.5;
-  float tankHeight = 2.5;
+  float tankLength = 5.0f;
+  float tankWidth = 2.5f;
+  float tankHeight = 2.5f;
   unsigned int boxVAO;
   unsigned int boxVBO;
   unsigned int boxEBO;
@@ -308,7 +333,7 @@ int main() {
 
   glBindVertexArray(0);
 
-  float deltaTime = 1.0f / 60.0f;
+  float deltaTime = 1.0f / 144.0f;
   float prevTime = glfwGetTime();
   float accumulatedTime = 0.0f;
 
@@ -330,22 +355,15 @@ int main() {
       if (state.isMovingUpward) delta += v * speed * deltaTime;
       state.camera.translateBy(delta);
 
-      simulation1.use();
-      simulation1.uniform("deltaTime", deltaTime);
-      simulation1.uniform("nParticles", nParticles);
-      simulation1.uniform("smoothingRadius", smoothingRadius);
-      simulation1.uniform("time", currTime);
-      glDispatchCompute((unsigned int)nParticles / 128, 1, 1);
-      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-      simulation2.use();
-      simulation2.uniform("deltaTime", deltaTime);
-      simulation2.uniform("nParticles", nParticles);
-      simulation2.uniform("smoothingRadius", smoothingRadius);
-      simulation2.uniform("tankLength", tankLength);
-      simulation2.uniform("tankHeight", tankHeight);
-      simulation2.uniform("tankWidth", tankWidth);
-      simulation2.uniform("time", currTime);
+      simulation.use();
+      simulation.uniform("deltaTime", deltaTime);
+      simulation.uniform("nParticles", nParticles);
+      simulation.uniform("smoothingRadius", smoothingRadius);
+      simulation.uniform("lookAhead", lookAhead);
+      simulation.uniform("tankLength", tankLength);
+      simulation.uniform("tankHeight", tankHeight);
+      simulation.uniform("tankWidth", tankWidth);
+      simulation.uniform("time", currTime);
       glDispatchCompute((unsigned int)nParticles / 128, 1, 1);
       glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
@@ -355,7 +373,7 @@ int main() {
     glClearColor(0.6f, 0.88f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // // use compute shader
+    // // use compute particleShader
     // computeShader.use();
     // computeShader.uniform("camera.origin", origin);
     // computeShader.uniform("camera.u", u);
@@ -367,19 +385,21 @@ int main() {
     // // make sure writing to image has finished before read
     // glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
-    shader.use();
-    shader.uniform("view", state.camera.view());
-    shader.uniform("projection", state.camera.projection());
+    particleShader.use();
+    particleShader.uniform("view", state.camera.view());
+    particleShader.uniform("projection", state.camera.projection());
+    particleShader.uniform("nParticles", nParticles);
+    particleShader.uniform("smoothingRadius", smoothingRadius);
 
     particle.draw(nParticles);
     // glBindVertexArray(particleVAO);
     // glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, nParticles);
     // glBindVertexArray(0);
 
-    tank.use();
-    tank.uniform("model", glm::mat4(1.0));
-    tank.uniform("view", state.camera.view());
-    tank.uniform("projection", state.camera.projection());
+    tankShader.use();
+    tankShader.uniform("model", glm::mat4(1.0));
+    tankShader.uniform("view", state.camera.view());
+    tankShader.uniform("projection", state.camera.projection());
 
     glBindVertexArray(boxVAO);
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
