@@ -1,6 +1,6 @@
 # SPH Fluid Simulation (WIP)
 
-[demo](https://github.com/jseok1/sph-fluid-sim/README.mp4)
+https://github.com/user-attachments/assets/a33e29b2-1dcb-4b89-b545-714844991433
 
 A particle-based Lagrangian approach to fluid simulation using *smoothed particle hydrodynamics* (SPH).
 
