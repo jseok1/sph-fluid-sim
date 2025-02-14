@@ -187,7 +187,8 @@ void main() {
   particles[i].volume = volume(i);
   particles[i].pressure = pressure(i);
 
-  barrier();
+  // memory barrier needed?
+  barrier(); // THIS ONLY SYNCHRONIZES PER WORK GROUPPPPPPPP (must call separate kernels)
 
   vec3 position =
     vec3(particles[i].position[0], particles[i].position[1], particles[i].position[2]);

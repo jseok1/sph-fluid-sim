@@ -1,5 +1,5 @@
 // clang-format off
-#include "glad/glad.h"
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 // clang-format on
 
@@ -333,6 +333,40 @@ int main() {
 
   glBindVertexArray(0);
 
+  // DEMO PARALLEL
+  ComputeShader sort;
+  try {
+    sort.build("./assets/shaders/radix-sort.comp.glsl");
+  } catch (const std::exception& err) {
+    std::cerr << err.what();
+    return 1;
+  }
+
+  const unsigned int sort_n = 512;
+  std::array<unsigned int, sort_n> input;
+  std::array<unsigned int, sort_n> output;
+  for (int i = 0; i < sort_n; i++) {
+    input[i] = sort_n - i;
+  }
+  output.fill(0);
+
+  unsigned int inputSSBO;
+  glGenBuffers(1, &inputSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, inputSSBO);
+  glBufferData(
+    GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * input.size(), input.data(), GL_DYNAMIC_DRAW
+  );
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, inputSSBO);
+
+  unsigned int outputSSBO;
+  glGenBuffers(1, &outputSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, outputSSBO);
+  glBufferData(
+    GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * output.size(), output.data(), GL_DYNAMIC_DRAW
+  );
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, outputSSBO);
+  // DEMO PARALLEL
+
   float deltaTime = 1.0f / 144.0f;
   float prevTime = glfwGetTime();
   float accumulatedTime = 0.0f;
@@ -369,6 +403,11 @@ int main() {
 
       accumulatedTime -= deltaTime;
     }
+
+    // TODO: remove
+    sort.use();
+    glDispatchCompute((unsigned int)sort_n / 256, 1, 1);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     glClearColor(0.6f, 0.88f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

@@ -1,4 +1,14 @@
-Smoothed-Particle Hydrodynamics (SPH)
+# SPH Fluid Simulation (WIP)
+
+[demo](https://github.com/jseok1/sph-fluid-sim/demo.mp4)
+
+A particle-based Lagrangian approach to fluid simulation using *smoothed particle hydrodynamics* (SPH).
+
+
+🚧 Currently a work-in-progress. 🚧
+
+
+<!-- Smoothed-Particle Hydrodynamics (SPH)
 
 Particle-based Lagrangian approach (as opposed to grid-based Eulerian)
 
@@ -68,3 +78,6 @@ https://www.sci.utah.edu/~csilva/papers/cgf.pdf
 The block size is determined
 as a multiplier of the SIMD size to exploit the full power of
 SIMD processing unit
+
+Blelloch:
+https://ams148-spring18-01.courses.soe.ucsc.edu/system/files/attachments/note5.pdf -->
