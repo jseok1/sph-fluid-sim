@@ -1,6 +1,6 @@
 # SPH Fluid Simulation (WIP)
 
-[demo](https://github.com/jseok1/sph-fluid-sim/demo.mp4)
+[demo](https://github.com/jseok1/sph-fluid-sim/README.mp4)
 
 A particle-based Lagrangian approach to fluid simulation using *smoothed particle hydrodynamics* (SPH).
 
@@ -17,7 +17,7 @@ SPH is an interpolation method for particle systems. With SPH, field quantities 
 Local radial smoothing kernels with finite support.
 Should be normalized such that area under kernel is 1.
 
-Conservation of mass. <-- guaranteed in particle-based simulations
+Conservation of mass. <- guaranteed in particle-based simulations
 Conservation of momemtum (Navier-Stokes).
 
 
@@ -41,8 +41,8 @@ sparse grid storage.
 
 https://ramakarl.com/pdfs/2014_Hoetzlein_FastFixedRadius_Neighbors.pdf
 
-uniform grid --> using index sort (optimize further using Z-curves - also important on GPU?) (handles with insertion sort)
---> (better memory) using spatial hashing (very simple)
+uniform grid -> using index sort (optimize further using Z-curves - also important on GPU?) (handles with insertion sort)
+-> (better memory) using spatial hashing (very simple)
 
 SESPH - 
 PCISPH - predicted position and velocity
