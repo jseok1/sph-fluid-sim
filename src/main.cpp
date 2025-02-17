@@ -4,6 +4,7 @@
 // clang-format on
 
 #include <array>
+#include <cmath>
 #include <iostream>
 #include <vector>
 
@@ -335,8 +336,10 @@ int main() {
 
   // DEMO PARALLEL
   ComputeShader sort;
+  ComputeShader sort2;
   try {
     sort.build("./assets/shaders/radix-sort.comp.glsl");
+    sort2.build("./assets/shaders/radix-sort-2.comp.glsl");
   } catch (const std::exception& err) {
     std::cerr << err.what();
     return 1;
@@ -345,10 +348,12 @@ int main() {
   const unsigned int sort_n = 512;
   std::array<unsigned int, sort_n> input;
   std::array<unsigned int, sort_n> output;
+  std::array<unsigned int, sort_n> hist;
   for (int i = 0; i < sort_n; i++) {
-    input[i] = sort_n - i;
+    input[i] = fmod(sort_n - i, 256);
   }
   output.fill(0);
+  hist.fill(0);
 
   unsigned int inputSSBO;
   glGenBuffers(1, &inputSSBO);
@@ -365,6 +370,14 @@ int main() {
     GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * output.size(), output.data(), GL_DYNAMIC_DRAW
   );
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, outputSSBO);
+
+  unsigned int histSSBO;
+  glGenBuffers(1, &histSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, histSSBO);
+  glBufferData(
+    GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * hist.size(), hist.data(), GL_DYNAMIC_DRAW
+  );
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, histSSBO);
   // DEMO PARALLEL
 
   float deltaTime = 1.0f / 144.0f;
@@ -406,6 +419,10 @@ int main() {
 
     // TODO: remove
     sort.use();
+    glDispatchCompute((unsigned int)sort_n / 256, 1, 1);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    sort2.use();
     glDispatchCompute((unsigned int)sort_n / 256, 1, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 

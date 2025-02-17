@@ -48,7 +48,9 @@ GLuint ComputeShader::compile(GLenum shaderType, const std::string& shaderPath) 
   if (!compiled) {
     char log[512];
     glGetShaderInfoLog(shaderId, 512, NULL, log);
-    throw std::runtime_error("ERROR::ComputeShader::COMPILATION_FAILED\n" + std::string(log));
+    throw std::runtime_error(
+      "ERROR::ComputeShader::COMPILATION_FAILED at " + shaderPath + "\n" + std::string(log)
+    );
   };
 
   return shaderId;
