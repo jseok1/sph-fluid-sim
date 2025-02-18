@@ -6,6 +6,8 @@
 #include <array>
 #include <cmath>
 #include <iostream>
+#include <numeric>
+#include <random>
 #include <vector>
 
 #include "Camera.hpp"
@@ -335,11 +337,13 @@ int main() {
   glBindVertexArray(0);
 
   // DEMO PARALLEL
-  ComputeShader sort;
-  ComputeShader sort2;
+  ComputeShader sort1, sort2, sort3, sort4, sort5;
   try {
-    sort.build("./assets/shaders/radix-sort.comp.glsl");
+    sort1.build("./assets/shaders/radix-sort-1.comp.glsl");
     sort2.build("./assets/shaders/radix-sort-2.comp.glsl");
+    sort3.build("./assets/shaders/radix-sort-3.comp.glsl");
+    sort4.build("./assets/shaders/radix-sort-4.comp.glsl");
+    sort5.build("./assets/shaders/radix-sort-5.comp.glsl");
   } catch (const std::exception& err) {
     std::cerr << err.what();
     return 1;
@@ -349,11 +353,24 @@ int main() {
   std::array<unsigned int, sort_n> input;
   std::array<unsigned int, sort_n> output;
   std::array<unsigned int, sort_n> hist;
-  for (int i = 0; i < sort_n; i++) {
-    input[i] = fmod(sort_n - i, 256);
+  std::array<unsigned int, sort_n / 256> lastHist;
+  std::array<unsigned int, sort_n> log;
+
+  std::iota(input.begin(), input.end(), 1);
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::shuffle(input.begin(), input.end(), gen);
+
+  for (int i = 0; i < 512; i++) {
+    // input[i] = std::fmod(input[i], 256);
+    // input[i] += 256;
+    std::cout << input[i] << " ";
   }
+
   output.fill(0);
   hist.fill(0);
+  lastHist.fill(0);
+  log.fill(0);
 
   unsigned int inputSSBO;
   glGenBuffers(1, &inputSSBO);
@@ -378,6 +395,25 @@ int main() {
     GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * hist.size(), hist.data(), GL_DYNAMIC_DRAW
   );
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, histSSBO);
+
+  unsigned int lastHistSSBO;
+  glGenBuffers(1, &lastHistSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, lastHistSSBO);
+  glBufferData(
+    GL_SHADER_STORAGE_BUFFER,
+    sizeof(unsigned int) * lastHist.size(),
+    lastHist.data(),
+    GL_DYNAMIC_DRAW
+  );
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, lastHistSSBO);
+
+  unsigned int logSSBO;
+  glGenBuffers(1, &logSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, logSSBO);
+  glBufferData(
+    GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * log.size(), log.data(), GL_DYNAMIC_DRAW
+  );
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, logSSBO);
   // DEMO PARALLEL
 
   float deltaTime = 1.0f / 144.0f;
@@ -418,13 +454,33 @@ int main() {
     }
 
     // TODO: remove
-    sort.use();
-    glDispatchCompute((unsigned int)sort_n / 256, 1, 1);
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    // 8-bit per pass → 4 passes for 32-bit keys
+    // it's important that pass is an unsigned int
+    for (unsigned int pass = 0; pass < 4; pass++) {
+      sort1.use();
+      sort1.uniform("pass", pass);
+      glDispatchCompute((unsigned int)sort_n / 256, 1, 1);
+      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-    sort2.use();
-    glDispatchCompute((unsigned int)sort_n / 256, 1, 1);
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+      sort2.use();
+      glDispatchCompute((unsigned int)sort_n / 256, 1, 1);
+      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+      sort3.use();
+      glDispatchCompute(
+        (unsigned int)ceil(sort_n / 256.0 / 256.0), 1, 1
+      );  // ? better way to handle
+      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+      sort4.use();
+      sort4.uniform("pass", pass);
+      glDispatchCompute((unsigned int)sort_n / 256, 1, 1);
+      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+      sort5.use();
+      glDispatchCompute((unsigned int)sort_n / 256, 1, 1);
+      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    }
 
     glClearColor(0.6f, 0.88f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
