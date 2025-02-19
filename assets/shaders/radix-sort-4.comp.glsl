@@ -30,6 +30,7 @@ void main() {
   uint g_tid = gl_GlobalInvocationID.x;  // + gl_GlobalInvocationID.y +
   uint l_tid = gl_LocalInvocationID.x;
   uint wid = gl_WorkGroupID.x;
+  uint nw = gl_NumWorkGroups.x;
 
   uint key = g_input[g_tid];
   uint digit = (key >> 8 * pass) & 0xFF;
@@ -43,7 +44,7 @@ void main() {
     }
   }
   uint g_offset =
-    g_offsets[digit * 2 + wid] + g_last_histogram[uint(floor((digit * 2 + wid) / 256))];
+    g_offsets[digit * nw + wid] + g_last_histogram[uint(floor((digit * nw + wid) / 256))];
 
   // is this coalesced???
   g_output[l_tid - l_offset + g_offset] = key;

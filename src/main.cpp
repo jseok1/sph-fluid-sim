@@ -1,3 +1,5 @@
+#define WORKGROUP_SIZE 256
+
 // clang-format off
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -349,21 +351,19 @@ int main() {
     return 1;
   }
 
-  const unsigned int sort_n = 512;
+  const unsigned int sort_n = 1024;
   std::array<unsigned int, sort_n> input;
   std::array<unsigned int, sort_n> output;
   std::array<unsigned int, sort_n> hist;
-  std::array<unsigned int, sort_n / 256> lastHist;
+  std::array<unsigned int, sort_n / WORKGROUP_SIZE> lastHist;
   std::array<unsigned int, sort_n> log;
 
-  std::iota(input.begin(), input.end(), 1);
+  std::iota(input.begin(), input.end(), 0);
   std::random_device rd;
   std::mt19937 gen(rd());
   std::shuffle(input.begin(), input.end(), gen);
 
-  for (int i = 0; i < 512; i++) {
-    // input[i] = std::fmod(input[i], 256);
-    // input[i] += 256;
+  for (int i = 0; i < 1024; i++) {
     std::cout << input[i] << " ";
   }
 
@@ -459,26 +459,24 @@ int main() {
     for (unsigned int pass = 0; pass < 4; pass++) {
       sort1.use();
       sort1.uniform("pass", pass);
-      glDispatchCompute((unsigned int)sort_n / 256, 1, 1);
+      glDispatchCompute((unsigned int)sort_n / WORKGROUP_SIZE, 1, 1);
       glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
       sort2.use();
-      glDispatchCompute((unsigned int)sort_n / 256, 1, 1);
+      glDispatchCompute((unsigned int)sort_n / WORKGROUP_SIZE, 1, 1);
       glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
       sort3.use();
-      glDispatchCompute(
-        (unsigned int)ceil(sort_n / 256.0 / 256.0), 1, 1
-      );  // ? better way to handle
+      glDispatchCompute((unsigned int)1, 1, 1);  // ? better way to handle
       glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
       sort4.use();
       sort4.uniform("pass", pass);
-      glDispatchCompute((unsigned int)sort_n / 256, 1, 1);
+      glDispatchCompute((unsigned int)sort_n / WORKGROUP_SIZE, 1, 1);
       glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
       sort5.use();
-      glDispatchCompute((unsigned int)sort_n / 256, 1, 1);
+      glDispatchCompute((unsigned int)sort_n / WORKGROUP_SIZE, 1, 1);
       glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
 
