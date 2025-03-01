@@ -27,7 +27,7 @@ layout(std430, binding = 6) buffer LogSSBO {
 uniform uint pass;
 
 void main() {
-  uint g_tid = gl_GlobalInvocationID.x;  // + gl_GlobalInvocationID.y +
+  uint g_tid = gl_GlobalInvocationID.x;
   uint l_tid = gl_LocalInvocationID.x;
   uint wid = gl_WorkGroupID.x;
   uint nw = gl_NumWorkGroups.x;

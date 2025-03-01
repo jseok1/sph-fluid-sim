@@ -15,11 +15,12 @@ layout(std430, binding = 5) buffer LastHistogramBuffer {
 shared uint l_offsets[WORKGROUP_SIZE];
 
 void main() {
-  uint g_tid = gl_GlobalInvocationID.x;  // + gl_GlobalInvocationID.y +
+  uint g_tid = gl_GlobalInvocationID.x;
   uint l_tid = gl_LocalInvocationID.x;
   uint wid = gl_WorkGroupID.x;
 
   l_offsets[l_tid] = g_offsets[g_tid];
+  barrier();
 
   uint stride = 2;
 
@@ -40,7 +41,7 @@ void main() {
   barrier();
 
   // downsweep
-  for (uint d = 1; d < 256; d *= 2) {
+  for (uint d = 1; d < WORKGROUP_SIZE; d *= 2) {
     stride /= 2;
     if (l_tid < d) {
       uint copy = l_offsets[WORKGROUP_SIZE - 1 - (stride * l_tid)];

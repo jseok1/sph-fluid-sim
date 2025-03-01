@@ -1,6 +1,6 @@
 #version 460 core
 
-#define WORKGROUP_SIZE 1024 / 256
+#define WORKGROUP_SIZE 256  // N / 256
 
 layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
@@ -20,6 +20,7 @@ void main() {
 
   // use first 0 - n / BLOCK_SIZE invocations to scan over last elements
   l_last_histogram[l_tid] = g_last_histogram[g_tid];
+  barrier();
 
   uint stride = 2;
 
@@ -39,7 +40,7 @@ void main() {
   barrier();
 
   // downsweep
-  for (uint d = 1; d < 256; d *= 2) {
+  for (uint d = 1; d < WORKGROUP_SIZE; d *= 2) {
     stride /= 2;
     if (l_tid < d) {
       uint copy = l_last_histogram[WORKGROUP_SIZE - 1 - (stride * l_tid)];

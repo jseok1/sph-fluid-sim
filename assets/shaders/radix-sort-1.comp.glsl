@@ -20,37 +20,59 @@ layout(std430, binding = 4) buffer HistogramBuffer {
 
 shared uint false_total;
 shared uint l_input[WORKGROUP_SIZE];
-shared uint l_bit_flags[RADIX];
+shared uint l_offsets_bit[RADIX];
 
 uniform uint pass;
 
-uint scan() {
+// maybe next step: for the other shaders, extract scan and scatter into functions 
+// below didn't work - could git reset or debug
+
+void scan() {
   uint l_tid = gl_LocalInvocationID.x;
 
-  uint true_before = 0;
+  uint stride = 2;
 
-  // not the worst since bounded by 256 but ideally also parallelize
-  for (uint i = 0; i < l_tid; i++) {
-    true_before += l_bit_flags[i];  // how to make scan faster? -- could also just use l_input
+  // upsweep (reduction)
+  for (uint d = WORKGROUP_SIZE / 2; d > 0; d /= 2) {
+    if (l_tid < d) {
+      l_offsets_bit[WORKGROUP_SIZE - 1 - (stride * l_tid)] +=
+        l_offsets_bit[WORKGROUP_SIZE - 1 - (stride * l_tid + stride / 2)];
+    }
+    stride *= 2;
+    barrier();
   }
 
-  return true_before;
-}
-
-uint split(uint bit) {
-  uint l_tid = gl_LocalInvocationID.x;
-
-  // (1) Count ’True’ predicates held by lower-numbered threads
-  uint true_before = scan();
-
-  // (2) Last thread calculates total number of ’False’ predicates
   if (l_tid == WORKGROUP_SIZE - 1) {
-    false_total = WORKGROUP_SIZE - (true_before + bit);
+    l_offsets_bit[l_tid] = 0;
   }
   barrier();
 
-  // (3) Compute and return the ’rank’ for this thread
-  return bit == 1 ? true_before + false_total : l_tid - true_before;  // weird there's no truthy
+  // downsweep
+  for (uint d = 1; d < WORKGROUP_SIZE; d *= 2) {
+    stride /= 2;
+    if (l_tid < d) {
+      uint copy = l_offsets_bit[WORKGROUP_SIZE - 1 - (stride * l_tid)];
+
+      l_offsets_bit[WORKGROUP_SIZE - 1 - (stride * l_tid)] +=
+        l_offsets_bit[WORKGROUP_SIZE - 1 - (stride * l_tid + stride / 2)];
+      l_offsets_bit[WORKGROUP_SIZE - 1 - (stride * l_tid + stride / 2)] = copy;
+    }
+    barrier();
+  }
+}
+
+void split(uint key, uint bit) {
+  uint l_tid = gl_LocalInvocationID.x;
+
+  if (l_tid == WORKGROUP_SIZE - 1) {
+    false_total = WORKGROUP_SIZE - (l_offsets_bit[l_tid] + bit);
+  }
+  barrier();
+
+  uint l_offset = bit == 1 ? l_offsets_bit[l_tid] + false_total : l_tid - l_offsets_bit[l_tid];
+  barrier();
+
+  l_input[l_offset] = key;
 }
 
 void main() {
@@ -62,26 +84,24 @@ void main() {
   // TODO: it's actually more efficient to handle 4 elements per invocation instead of just 1
 
   g_offsets[g_tid] = 0;
-  l_input[l_tid] = g_input[g_tid];  // copy into shared memory
+  l_input[l_tid] = g_input[g_tid];
 
   // 1. local radix sort on digit
   for (uint i = 0; i < RADIX_SIZE; i++) {
     uint key = l_input[l_tid];
     uint bit = (key >> RADIX_SIZE * pass + i) & 0x1;
 
-    l_bit_flags[l_tid] = bit;
+    l_offsets_bit[l_tid] = bit;
     barrier();
 
-    uint l_dst_idx = split(bit);
-    barrier();
-
-    l_input[l_dst_idx] = key;
+    scan();
+    split(key, bit);
     barrier();
   }
 
   // 2. local histogram and offsets
   if (l_tid == WORKGROUP_SIZE - 1) {
-    for (uint i = 0; i < 256; i++) {
+    for (uint i = 0; i < WORKGROUP_SIZE; i++) {
       uint key = l_input[i];
       uint digit = (key >> RADIX_SIZE * pass) & 0xFF;
 

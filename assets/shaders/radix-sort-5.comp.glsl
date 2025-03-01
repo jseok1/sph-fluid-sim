@@ -13,7 +13,7 @@ layout(std430, binding = 3) buffer OutputBuffer {
 };
 
 void main() {
-  uint g_tid = gl_GlobalInvocationID.x;  // + gl_GlobalInvocationID.y +
+  uint g_tid = gl_GlobalInvocationID.x;
 
   // ping-pong buffers
   g_input[g_tid] = g_output[g_tid];

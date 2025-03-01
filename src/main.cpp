@@ -270,7 +270,7 @@ int main() {
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particlesSSBO);
 
   // hashes
-  const unsigned int mHash = 1024;
+  const unsigned int mHash = 2048;
   std::array<unsigned int, mHash> hashes;
   hashes.fill(mHash);
 
@@ -351,7 +351,7 @@ int main() {
     return 1;
   }
 
-  const unsigned int sort_n = 1024;
+  const unsigned int sort_n = 2048;
   std::array<unsigned int, sort_n> input;
   std::array<unsigned int, sort_n> output;
   std::array<unsigned int, sort_n> hist;
@@ -363,7 +363,7 @@ int main() {
   std::mt19937 gen(rd());
   std::shuffle(input.begin(), input.end(), gen);
 
-  for (int i = 0; i < 1024; i++) {
+  for (int i = 0; i < sort_n; i++) {
     std::cout << input[i] << " ";
   }
 
@@ -455,7 +455,6 @@ int main() {
 
     // TODO: remove
     // 8-bit per pass → 4 passes for 32-bit keys
-    // it's important that pass is an unsigned int
     for (unsigned int pass = 0; pass < 4; pass++) {
       sort1.use();
       sort1.uniform("pass", pass);
