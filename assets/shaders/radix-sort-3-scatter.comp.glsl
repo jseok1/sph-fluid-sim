@@ -5,12 +5,17 @@
 
 layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
-layout(std430, binding = 2) buffer InputBuffer {
-  uint g_input[];
+struct ParticleHandle {
+  uint hash;
+  uint offset;
 };
 
-layout(std430, binding = 3) buffer OutputBuffer {
-  uint g_output[];
+layout(std430, binding = 2) buffer ParticleHandlesFrontBuffer {
+  ParticleHandle g_handles_front[];
+};
+
+layout(std430, binding = 3) buffer ParticleHandlesBackBuffer {
+  ParticleHandle g_handles_back[];
 };
 
 layout(std430, binding = 4) buffer OffsetsBuffer {
@@ -26,13 +31,14 @@ void main() {
   uint wid = gl_WorkGroupID.x;
   uint nw = gl_NumWorkGroups.x;
 
-  uint key = g_input[g_tid];
+  ParticleHandle handle = g_handles_back[g_tid];
+  uint key = handle.hash;
   uint digit = (key >> 8 * pass) & 0xFF;
 
   uint l_offset;
   // bad (could store within separate SSBO?)  -- better way to calculate in O(1)?
   for (uint i = 0; i < 256; i++) {
-    if (((g_input[wid * 256 + i] >> 8 * pass) & 0xFF) == digit) {
+    if (((g_handles_back[wid * 256 + i].hash >> 8 * pass) & 0xFF) == digit) {
       l_offset = i;
       break;
     }
@@ -51,5 +57,5 @@ void main() {
   }
 
   // is this coalesced???
-  g_output[l_tid - l_offset + g_offset] = key;
+  g_handles_front[l_tid - l_offset + g_offset] = handle;
 }

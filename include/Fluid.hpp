@@ -12,6 +12,11 @@ struct Particle {
   float velocity[3];
 };
 
+struct ParticleHandle {
+  unsigned int hash;
+  unsigned int offset;
+};
+
 class Fluid {
  public:
   std::vector<Particle> particles;

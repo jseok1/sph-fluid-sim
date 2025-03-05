@@ -277,13 +277,13 @@ int main() {
   std::array<unsigned int, mHash> hashes;
   hashes.fill(mHash);
 
-  unsigned int hashesSSBO;
-  glGenBuffers(1, &hashesSSBO);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, hashesSSBO);
+  unsigned int startIndicesSSBO;
+  glGenBuffers(1, &startIndicesSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, startIndicesSSBO);
   glBufferData(
     GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * hashes.size(), hashes.data(), GL_DYNAMIC_DRAW
   );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, hashesSSBO);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, startIndicesSSBO);
 
   // param
   float smoothingRadius = 0.5f;
@@ -342,19 +342,20 @@ int main() {
   glBindVertexArray(0);
 
   // DEMO PARALLEL
-  ComputeShader radixSortCount, radixSortScan, radixSortScatter;
+  ComputeShader radixSortCount, radixSortScan, radixSortScatter, startIndices;
   try {
     radixSortCount.build("./assets/shaders/radix-sort-1-count.comp.glsl");
     radixSortScan.build("./assets/shaders/radix-sort-2-scan.comp.glsl");
     radixSortScatter.build("./assets/shaders/radix-sort-3-scatter.comp.glsl");
+    startIndices.build("./assets/shaders/start-indices.comp.glsl");
   } catch (const std::exception& err) {
     std::cerr << err.what();
     return 1;
   }
 
   const unsigned int sort_n = 65536;
-  std::array<unsigned int, sort_n> input;
-  std::array<unsigned int, sort_n> output;
+  std::vector<ParticleHandle> front(sort_n);
+  std::vector<ParticleHandle> back(sort_n);
 
   unsigned int total_n = 0;
   unsigned int curr_n = ceil(static_cast<float>(sort_n) / WORKGROUP_SIZE) * RADIX;
@@ -364,28 +365,37 @@ int main() {
   }
   std::vector<unsigned int> hist(total_n, 0);
 
-  std::iota(output.begin(), output.end(), 0);
+  for (int i = 0; i < sort_n; i++) {
+    front[i].hash = i / 2;
+    front[i].offset = i;
+    back[i].hash = 0;
+    back[i].offset = 0;
+  }
+
   std::random_device rd;
   std::mt19937 gen(rd());
-  std::shuffle(output.begin(), output.end(), gen);
+  std::shuffle(front.begin(), front.end(), gen);
 
-  input.fill(0);
+  for (int i = 0; i < 100; i++) {
+    std::cout << front[i].hash << " ";
+  }
+  std::cout << std::endl;
 
-  unsigned int inputSSBO;
-  glGenBuffers(1, &inputSSBO);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, inputSSBO);
+  unsigned int frontSSBO;
+  glGenBuffers(1, &frontSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, frontSSBO);
   glBufferData(
-    GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * input.size(), input.data(), GL_DYNAMIC_DRAW
+    GL_SHADER_STORAGE_BUFFER, sizeof(ParticleHandle) * front.size(), front.data(), GL_DYNAMIC_DRAW
   );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, inputSSBO);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, frontSSBO);
 
-  unsigned int outputSSBO;
-  glGenBuffers(1, &outputSSBO);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, outputSSBO);
+  unsigned int backSSBO;
+  glGenBuffers(1, &backSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, backSSBO);
   glBufferData(
-    GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * output.size(), output.data(), GL_DYNAMIC_DRAW
+    GL_SHADER_STORAGE_BUFFER, sizeof(ParticleHandle) * back.size(), back.data(), GL_DYNAMIC_DRAW
   );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, outputSSBO);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, backSSBO);
 
   unsigned int histSSBO;
   glGenBuffers(1, &histSSBO);
@@ -439,6 +449,43 @@ int main() {
       if (state.isMovingUpward) delta += v * speed * deltaTime;
       state.camera.translateBy(delta);
 
+      // look into this - 4-5 physics updates per frame??
+
+      // sorting
+      // -------
+      // 8-bit per pass → 4 passes for 32-bit keys
+      for (unsigned int pass = 0; pass < 4; pass++) {
+        radixSortCount.use();
+        radixSortCount.uniform("pass", pass);
+        glDispatchCompute((unsigned int)sort_n / WORKGROUP_SIZE, 1, 1);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+        radixSortScan.use();
+        curr_n = ceil(static_cast<float>(sort_n) / WORKGROUP_SIZE) * RADIX;
+        unsigned int offset = 0;
+        while (curr_n > 1) {
+          radixSortScan.uniform("offset", (unsigned int)offset);
+          offset += ceil(static_cast<float>(curr_n) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
+
+          glDispatchCompute((unsigned int)ceil(static_cast<float>(curr_n) / WORKGROUP_SIZE), 1, 1);
+          glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+          curr_n /= WORKGROUP_SIZE;
+        }
+
+        radixSortScatter.use();
+        radixSortScatter.uniform("pass", pass);
+        radixSortScatter.uniform("sort_n", sort_n);
+        glDispatchCompute((unsigned int)sort_n / WORKGROUP_SIZE, 1, 1);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+      }
+
+      startIndices.use();
+      glDispatchCompute((unsigned int)sort_n / WORKGROUP_SIZE, 1, 1);
+      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+      // physics update
+      // --------------
       simulation.use();
       simulation.uniform("deltaTime", deltaTime);
       simulation.uniform("nParticles", nParticles);
@@ -452,34 +499,6 @@ int main() {
       glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
       accumulatedTime -= deltaTime;
-    }
-
-    // TODO: remove
-    // 8-bit per pass → 4 passes for 32-bit keys
-    for (unsigned int pass = 0; pass < 4; pass++) {
-      radixSortCount.use();
-      radixSortCount.uniform("pass", pass);
-      glDispatchCompute((unsigned int)sort_n / WORKGROUP_SIZE, 1, 1);
-      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-      radixSortScan.use();
-      curr_n = ceil(static_cast<float>(sort_n) / WORKGROUP_SIZE) * RADIX;
-      unsigned int offset = 0;
-      while (curr_n > 1) {
-        radixSortScan.uniform("offset", (unsigned int)offset);
-        offset += ceil(static_cast<float>(curr_n) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
-
-        glDispatchCompute((unsigned int)ceil(static_cast<float>(curr_n) / WORKGROUP_SIZE), 1, 1);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-        curr_n /= WORKGROUP_SIZE;
-      }
-
-      radixSortScatter.use();
-      radixSortScatter.uniform("pass", pass);
-      radixSortScatter.uniform("sort_n", sort_n);
-      glDispatchCompute((unsigned int)sort_n / WORKGROUP_SIZE, 1, 1);
-      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
 
     glClearColor(0.6f, 0.88f, 1.0f, 1.0f);
