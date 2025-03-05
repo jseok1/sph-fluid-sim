@@ -9,15 +9,19 @@ struct Particle {
   float pressure;
   float position[3];
   float velocity[3];
+};
+
+struct ParticleHandle {
   uint hash;
+  uint offset;
 };
 
 layout(std430, binding = 0) buffer Particles {
   Particle particles[];
 };
 
-layout(std430, binding = 1) buffer Hashes {
-  uint offsets[];
+layout(std430, binding = 1) buffer ParticleHandles {
+  ParticleHandle particle_handles[];
 };
 
 uniform float deltaTime;

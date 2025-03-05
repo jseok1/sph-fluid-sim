@@ -6,6 +6,15 @@
 
 layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
+struct ParticleHandle {
+  uint hash;
+  uint offset;
+};
+
+layout(std430, binding = 1) buffer ParticleHandles {
+  ParticleHandle particle_handles[];
+};
+
 layout(std430, binding = 2) buffer InputBuffer {
   uint g_input[];
 };
@@ -85,7 +94,7 @@ void main() {
   // TODO: it's actually more efficient to handle 4 elements per invocation instead of just 1
 
   g_offsets[l_tid * n_workgroups + wid] = 0;
-  l_input[l_tid] = g_input[g_tid];
+  l_input[l_tid] = g_output[g_tid];
 
   // 1. local radix sort on digit
   for (uint i = 0; i < RADIX_SIZE; i++) {

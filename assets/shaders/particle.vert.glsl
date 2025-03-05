@@ -7,7 +7,6 @@ struct Particle {
   float pressure;
   float position[3];
   float velocity[3];
-  uint hash;
 };
 
 layout(std430, binding = 0) buffer Particles {

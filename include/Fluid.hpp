@@ -10,7 +10,6 @@ struct Particle {
   float pressure;
   float position[3];
   float velocity[3];
-  unsigned int hash;
 };
 
 class Fluid {
@@ -32,7 +31,6 @@ class Fluid {
           particle.velocity[0] = 0.0f;
           particle.velocity[1] = 0.0f;
           particle.velocity[2] = 0.0f;
-          particle.hash = 0;
 
           particles.push_back(particle);
         }

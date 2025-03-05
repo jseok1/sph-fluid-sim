@@ -342,12 +342,11 @@ int main() {
   glBindVertexArray(0);
 
   // DEMO PARALLEL
-  ComputeShader sort1, sort2, sort4, sort5;
+  ComputeShader radixSortCount, radixSortScan, radixSortScatter;
   try {
-    sort1.build("./assets/shaders/radix-sort-1.comp.glsl");
-    sort2.build("./assets/shaders/radix-sort-2.comp.glsl");
-    sort4.build("./assets/shaders/radix-sort-4.comp.glsl");
-    sort5.build("./assets/shaders/radix-sort-5.comp.glsl");
+    radixSortCount.build("./assets/shaders/radix-sort-1-count.comp.glsl");
+    radixSortScan.build("./assets/shaders/radix-sort-2-scan.comp.glsl");
+    radixSortScatter.build("./assets/shaders/radix-sort-3-scatter.comp.glsl");
   } catch (const std::exception& err) {
     std::cerr << err.what();
     return 1;
@@ -365,16 +364,12 @@ int main() {
   }
   std::vector<unsigned int> hist(total_n, 0);
 
-  std::iota(input.begin(), input.end(), 0);
+  std::iota(output.begin(), output.end(), 0);
   std::random_device rd;
   std::mt19937 gen(rd());
-  std::shuffle(input.begin(), input.end(), gen);
+  std::shuffle(output.begin(), output.end(), gen);
 
-  // for (int i = 0; i < sort_n; i++) {
-  //   std::cout << input[i] << " ";
-  // }
-
-  output.fill(0);
+  input.fill(0);
 
   unsigned int inputSSBO;
   glGenBuffers(1, &inputSSBO);
@@ -462,16 +457,16 @@ int main() {
     // TODO: remove
     // 8-bit per pass → 4 passes for 32-bit keys
     for (unsigned int pass = 0; pass < 4; pass++) {
-      sort1.use();
-      sort1.uniform("pass", pass);
+      radixSortCount.use();
+      radixSortCount.uniform("pass", pass);
       glDispatchCompute((unsigned int)sort_n / WORKGROUP_SIZE, 1, 1);
       glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-      sort2.use();
+      radixSortScan.use();
       curr_n = ceil(static_cast<float>(sort_n) / WORKGROUP_SIZE) * RADIX;
       unsigned int offset = 0;
       while (curr_n > 1) {
-        sort2.uniform("offset", (unsigned int)offset);
+        radixSortScan.uniform("offset", (unsigned int)offset);
         offset += ceil(static_cast<float>(curr_n) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
 
         glDispatchCompute((unsigned int)ceil(static_cast<float>(curr_n) / WORKGROUP_SIZE), 1, 1);
@@ -480,13 +475,9 @@ int main() {
         curr_n /= WORKGROUP_SIZE;
       }
 
-      sort4.use();
-      sort4.uniform("pass", pass);
-      sort4.uniform("sort_n", sort_n);
-      glDispatchCompute((unsigned int)sort_n / WORKGROUP_SIZE, 1, 1);
-      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-      sort5.use();
+      radixSortScatter.use();
+      radixSortScatter.uniform("pass", pass);
+      radixSortScatter.uniform("sort_n", sort_n);
       glDispatchCompute((unsigned int)sort_n / WORKGROUP_SIZE, 1, 1);
       glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
