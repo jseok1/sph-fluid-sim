@@ -14,76 +14,77 @@ layout(std430, binding = 3) buffer OutputBuffer {
   uint g_output[];
 };
 
-layout(std430, binding = 4) buffer HistogramBuffer {
+layout(std430, binding = 4) buffer OffsetsBuffer {
   uint g_offsets[];
 };
 
 shared uint false_total;
 shared uint l_input[WORKGROUP_SIZE];
-shared uint l_offsets_bit[RADIX];
+shared uint l_offsets[RADIX];
+shared uint l_offsets_bitwise[RADIX];
 
 uniform uint pass;
 
-// maybe next step: for the other shaders, extract scan and scatter into functions 
-// below didn't work - could git reset or debug
-
-void scan() {
-  uint l_tid = gl_LocalInvocationID.x;
-
+void scan(uint l_tid) {
   uint stride = 2;
 
   // upsweep (reduction)
   for (uint d = WORKGROUP_SIZE / 2; d > 0; d /= 2) {
     if (l_tid < d) {
-      l_offsets_bit[WORKGROUP_SIZE - 1 - (stride * l_tid)] +=
-        l_offsets_bit[WORKGROUP_SIZE - 1 - (stride * l_tid + stride / 2)];
+      uint i = WORKGROUP_SIZE - 1 - (stride * l_tid);
+      uint j = WORKGROUP_SIZE - 1 - (stride * l_tid + stride / 2);
+
+      l_offsets_bitwise[i] += l_offsets_bitwise[j];
     }
-    stride *= 2;
     barrier();
+
+    stride *= 2;
   }
 
   if (l_tid == WORKGROUP_SIZE - 1) {
-    l_offsets_bit[l_tid] = 0;
+    l_offsets_bitwise[l_tid] = 0;
   }
   barrier();
 
   // downsweep
   for (uint d = 1; d < WORKGROUP_SIZE; d *= 2) {
     stride /= 2;
-    if (l_tid < d) {
-      uint copy = l_offsets_bit[WORKGROUP_SIZE - 1 - (stride * l_tid)];
 
-      l_offsets_bit[WORKGROUP_SIZE - 1 - (stride * l_tid)] +=
-        l_offsets_bit[WORKGROUP_SIZE - 1 - (stride * l_tid + stride / 2)];
-      l_offsets_bit[WORKGROUP_SIZE - 1 - (stride * l_tid + stride / 2)] = copy;
+    if (l_tid < d) {
+      uint i = WORKGROUP_SIZE - 1 - (stride * l_tid);
+      uint j = WORKGROUP_SIZE - 1 - (stride * l_tid + stride / 2);
+      uint l_offset_bitwise = l_offsets_bitwise[i];
+
+      l_offsets_bitwise[i] += l_offsets_bitwise[j];
+      l_offsets_bitwise[j] = l_offset_bitwise;
     }
     barrier();
   }
 }
 
-void split(uint key, uint bit) {
-  uint l_tid = gl_LocalInvocationID.x;
-
+void split(uint l_tid, uint key, uint bit) {
   if (l_tid == WORKGROUP_SIZE - 1) {
-    false_total = WORKGROUP_SIZE - (l_offsets_bit[l_tid] + bit);
+    false_total = WORKGROUP_SIZE - (l_offsets_bitwise[l_tid] + bit);
   }
   barrier();
 
-  uint l_offset = bit == 1 ? l_offsets_bit[l_tid] + false_total : l_tid - l_offsets_bit[l_tid];
+  uint l_offset =
+    bit == 1 ? l_offsets_bitwise[l_tid] + false_total : l_tid - l_offsets_bitwise[l_tid];
   barrier();
 
   l_input[l_offset] = key;
+  barrier();
 }
 
 void main() {
   uint g_tid = gl_GlobalInvocationID.x;
   uint l_tid = gl_LocalInvocationID.x;
   uint wid = gl_WorkGroupID.x;
-  uint nw = gl_NumWorkGroups.x;
+  uint n_workgroups = gl_NumWorkGroups.x;
 
   // TODO: it's actually more efficient to handle 4 elements per invocation instead of just 1
 
-  g_offsets[g_tid] = 0;
+  g_offsets[l_tid * n_workgroups + wid] = 0;
   l_input[l_tid] = g_input[g_tid];
 
   // 1. local radix sort on digit
@@ -91,22 +92,36 @@ void main() {
     uint key = l_input[l_tid];
     uint bit = (key >> RADIX_SIZE * pass + i) & 0x1;
 
-    l_offsets_bit[l_tid] = bit;
+    l_offsets_bitwise[l_tid] = bit;
     barrier();
 
-    scan();
-    split(key, bit);
-    barrier();
+    scan(l_tid);
+    split(l_tid, key, bit);
   }
 
   // 2. local histogram and offsets
-  if (l_tid == WORKGROUP_SIZE - 1) {
-    for (uint i = 0; i < WORKGROUP_SIZE; i++) {
-      uint key = l_input[i];
-      uint digit = (key >> RADIX_SIZE * pass) & 0xFF;
+  // if (l_tid == WORKGROUP_SIZE - 1) {
+  //   for (uint i = 0; i < WORKGROUP_SIZE; i++) {
+  //     uint key = l_input[i];
+  //     uint digit = (key >> RADIX_SIZE * pass) & 0xFF;
 
-      g_offsets[digit * nw + wid]++;
-    }
+  //     g_offsets[digit * n_workgroups + wid]++;
+  //   }
+  // }
+
+  if (l_tid < RADIX) {
+    l_offsets[l_tid] = 0;
+  }
+  barrier();
+
+  uint key = l_input[l_tid];
+  uint digit = (key >> RADIX_SIZE * pass) & 0xFF;
+
+  atomicAdd(l_offsets[digit], 1);
+  barrier();
+
+  if (l_tid < RADIX) {
+    g_offsets[l_tid * n_workgroups + wid] = l_offsets[l_tid];
   }
   barrier();
 

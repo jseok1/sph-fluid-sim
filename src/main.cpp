@@ -1,3 +1,4 @@
+#define RADIX 256
 #define WORKGROUP_SIZE 256
 
 // clang-format off
@@ -6,6 +7,7 @@
 // clang-format on
 
 #include <array>
+#include <cassert>
 #include <cmath>
 #include <iostream>
 #include <numeric>
@@ -256,6 +258,7 @@ int main() {
   const int fluidY = 16;
   const int fluidZ = 16;
   const int nParticles = fluidX * fluidY * fluidZ;
+  static_assert(nParticles <= WORKGROUP_SIZE * WORKGROUP_SIZE * WORKGROUP_SIZE);
   Fluid fluid(fluidX, fluidY, fluidZ);
 
   unsigned int particlesSSBO;
@@ -339,11 +342,10 @@ int main() {
   glBindVertexArray(0);
 
   // DEMO PARALLEL
-  ComputeShader sort1, sort2, sort3, sort4, sort5;
+  ComputeShader sort1, sort2, sort4, sort5;
   try {
     sort1.build("./assets/shaders/radix-sort-1.comp.glsl");
     sort2.build("./assets/shaders/radix-sort-2.comp.glsl");
-    sort3.build("./assets/shaders/radix-sort-3.comp.glsl");
     sort4.build("./assets/shaders/radix-sort-4.comp.glsl");
     sort5.build("./assets/shaders/radix-sort-5.comp.glsl");
   } catch (const std::exception& err) {
@@ -351,26 +353,28 @@ int main() {
     return 1;
   }
 
-  const unsigned int sort_n = 2048;
+  const unsigned int sort_n = 65536;
   std::array<unsigned int, sort_n> input;
   std::array<unsigned int, sort_n> output;
-  std::array<unsigned int, sort_n> hist;
-  std::array<unsigned int, sort_n / WORKGROUP_SIZE> lastHist;
-  std::array<unsigned int, sort_n> log;
+
+  unsigned int total_n = 0;
+  unsigned int curr_n = ceil(static_cast<float>(sort_n) / WORKGROUP_SIZE) * RADIX;
+  while (curr_n > 1) {
+    total_n += ceil(static_cast<float>(curr_n) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
+    curr_n /= WORKGROUP_SIZE;
+  }
+  std::vector<unsigned int> hist(total_n, 0);
 
   std::iota(input.begin(), input.end(), 0);
   std::random_device rd;
   std::mt19937 gen(rd());
   std::shuffle(input.begin(), input.end(), gen);
 
-  for (int i = 0; i < sort_n; i++) {
-    std::cout << input[i] << " ";
-  }
+  // for (int i = 0; i < sort_n; i++) {
+  //   std::cout << input[i] << " ";
+  // }
 
   output.fill(0);
-  hist.fill(0);
-  lastHist.fill(0);
-  log.fill(0);
 
   unsigned int inputSSBO;
   glGenBuffers(1, &inputSSBO);
@@ -396,24 +400,26 @@ int main() {
   );
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, histSSBO);
 
-  unsigned int lastHistSSBO;
-  glGenBuffers(1, &lastHistSSBO);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, lastHistSSBO);
-  glBufferData(
-    GL_SHADER_STORAGE_BUFFER,
-    sizeof(unsigned int) * lastHist.size(),
-    lastHist.data(),
-    GL_DYNAMIC_DRAW
+  const char* version = (const char*)glGetString(GL_VERSION);
+  printf("OpenGL Version: %s\n", version);
+  int maxWorkgroupSizeX, maxWorkgroupSizeY, maxWorkgroupSizeZ;
+  glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 0, &maxWorkgroupSizeX);
+  glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 1, &maxWorkgroupSizeY);
+  glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 2, &maxWorkgroupSizeZ);
+  printf(
+    "Max workgroup size: [%d, %d, %d]\n", maxWorkgroupSizeX, maxWorkgroupSizeY, maxWorkgroupSizeZ
   );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, lastHistSSBO);
+  int maxWorkgroupCountX, maxWorkgroupCountY, maxWorkgroupCountZ;
+  glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, &maxWorkgroupCountX);
+  glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 1, &maxWorkgroupCountY);
+  glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 2, &maxWorkgroupCountZ);
+  printf(
+    "Max workgroups: [%d, %d, %d]\n", maxWorkgroupCountX, maxWorkgroupCountY, maxWorkgroupCountZ
+  );
+  int maxSharedMem;
+  glGetIntegerv(GL_MAX_COMPUTE_SHARED_MEMORY_SIZE, &maxSharedMem);
+  printf("Max shared memory per workgroup: %d bytes\n", maxSharedMem);
 
-  unsigned int logSSBO;
-  glGenBuffers(1, &logSSBO);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, logSSBO);
-  glBufferData(
-    GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * log.size(), log.data(), GL_DYNAMIC_DRAW
-  );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, logSSBO);
   // DEMO PARALLEL
 
   float deltaTime = 1.0f / 144.0f;
@@ -462,15 +468,21 @@ int main() {
       glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
       sort2.use();
-      glDispatchCompute((unsigned int)sort_n / WORKGROUP_SIZE, 1, 1);
-      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+      curr_n = ceil(static_cast<float>(sort_n) / WORKGROUP_SIZE) * RADIX;
+      unsigned int offset = 0;
+      while (curr_n > 1) {
+        sort2.uniform("offset", (unsigned int)offset);
+        offset += ceil(static_cast<float>(curr_n) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
 
-      sort3.use();
-      glDispatchCompute((unsigned int)1, 1, 1);  // ? better way to handle
-      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        glDispatchCompute((unsigned int)ceil(static_cast<float>(curr_n) / WORKGROUP_SIZE), 1, 1);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+        curr_n /= WORKGROUP_SIZE;
+      }
 
       sort4.use();
       sort4.uniform("pass", pass);
+      sort4.uniform("sort_n", sort_n);
       glDispatchCompute((unsigned int)sort_n / WORKGROUP_SIZE, 1, 1);
       glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
