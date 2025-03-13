@@ -1,5 +1,7 @@
 #pragma once
 
+#include <glad/glad.h>
+
 #include <glm/glm.hpp>
 #include <vector>
 
@@ -14,7 +16,7 @@ struct Particle {
 
 struct ParticleHandle {
   unsigned int hash;
-  unsigned int offset;
+  unsigned int index;
 };
 
 class Fluid {
@@ -30,9 +32,10 @@ class Fluid {
           particle.density = 0.0f;
           particle.volume = 0.0f;
           particle.pressure = 0.0f;
-          particle.position[0] = static_cast<float>(i) / num_x * 2.5f - 1.25f; // spacing should depend on smoothing radius
-          particle.position[1] = static_cast<float>(j) / num_y * 1.5f - 0.75f;
-          particle.position[2] = static_cast<float>(k) / num_z * 1.5f - 0.75f;
+          particle.position[0] = static_cast<float>(i) / num_x * 4.0f -
+                                 1.25f;  // spacing should depend on smoothing radius
+          particle.position[1] = static_cast<float>(j) / num_y * 3.5f - 0.75f;
+          particle.position[2] = static_cast<float>(k) / num_z * 3.5f - 0.75f;
           particle.velocity[0] = 0.0f;
           particle.velocity[1] = 0.0f;
           particle.velocity[2] = 0.0f;

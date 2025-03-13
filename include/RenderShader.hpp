@@ -16,6 +16,7 @@ class RenderShader {
   void use();
   void uniform(const std::string& uniformId, bool uniform) const;
   void uniform(const std::string& uniformId, int uniform) const;
+  void uniform(const std::string& uniformId, unsigned int uniform) const;
   void uniform(const std::string& uniformId, float uniform) const;
   void uniform(const std::string& uniformId, glm::vec2 uniform) const;
   void uniform(const std::string& uniformId, glm::vec3 uniform) const;

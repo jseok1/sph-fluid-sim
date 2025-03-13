@@ -21,6 +21,7 @@ Conservation of mass. <- guaranteed in particle-based simulations
 Conservation of momemtum (Navier-Stokes).
 
 
+TODO: radix sort key size is bounded by the hashtable size in spatial hashing, so you don't need 4 passes of 8 bits for a uint technically. Speed up.
 
 
 https://matthias-research.github.io/pages/publications/sca03.pdf

@@ -6,9 +6,22 @@
 
 layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
+struct Particle {
+  float mass;
+  float density;
+  float volume;
+  float pressure;
+  float position[3];
+  float velocity[3];
+};
+
 struct ParticleHandle {
   uint hash;
-  uint offset;
+  uint index;
+};
+
+layout(std430, binding = 0) buffer ParticlesBuffer {
+  Particle g_particles[];
 };
 
 layout(std430, binding = 2) buffer ParticleHandlesFrontBuffer {
@@ -28,7 +41,20 @@ shared ParticleHandle l_handles_back[WORKGROUP_SIZE];
 shared uint l_offsets[RADIX];
 shared uint l_offsets_bitwise[RADIX];
 
+uniform float lookAhead;
+uniform uint mHash;
+uniform float smoothingRadius;
 uniform uint pass;
+
+uint hash(vec3 position) {
+  uint hash = uint(mod(
+    (uint(floor(position.x / smoothingRadius)) * 73856093) ^
+      (uint(floor(position.y / smoothingRadius)) * 19349663) ^
+      (uint(floor(position.z / smoothingRadius)) * 83492791),
+    mHash
+  ));
+  return hash;
+}
 
 void scan(uint l_tid) {
   uint stride = 2;
@@ -91,6 +117,14 @@ void main() {
 
   g_offsets[l_tid * n_workgroups + wid] = 0;
   l_handles_back[l_tid] = g_handles_front[g_tid];
+
+  // 0. compute hash based on predicted position
+  ParticleHandle handle = l_handles_back[l_tid];
+  Particle particle = g_particles[handle.index];
+  vec3 position = vec3(particle.position[0], particle.position[1], particle.position[2]);
+  vec3 velocity = vec3(particle.velocity[0], particle.velocity[1], particle.velocity[2]);
+  handle.hash = hash(position + velocity * lookAhead);
+  l_handles_back[l_tid] = handle;
 
   // 1. local radix sort on digit
   for (uint i = 0; i < RADIX_SIZE; i++) {

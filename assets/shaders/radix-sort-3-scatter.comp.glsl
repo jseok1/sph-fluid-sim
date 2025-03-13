@@ -7,7 +7,7 @@ layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 struct ParticleHandle {
   uint hash;
-  uint offset;
+  uint index;
 };
 
 layout(std430, binding = 2) buffer ParticleHandlesFrontBuffer {
@@ -23,13 +23,13 @@ layout(std430, binding = 4) buffer OffsetsBuffer {
 };
 
 uniform uint pass;
-uniform uint sort_n;
+uniform uint nParticles;
 
 void main() {
   uint g_tid = gl_GlobalInvocationID.x;
   uint l_tid = gl_LocalInvocationID.x;
   uint wid = gl_WorkGroupID.x;
-  uint nw = gl_NumWorkGroups.x;
+  uint n_workgroups = gl_NumWorkGroups.x;
 
   ParticleHandle handle = g_handles_back[g_tid];
   uint key = handle.hash;
@@ -45,8 +45,8 @@ void main() {
   }
   uint g_offset = 0;
 
-  uint curr_i = digit * nw + wid;
-  uint curr_n = uint(ceil(float(sort_n) / WORKGROUP_SIZE) * RADIX);
+  uint curr_i = digit * n_workgroups + wid;
+  uint curr_n = uint(ceil(float(nParticles) / WORKGROUP_SIZE) * RADIX);
   uint offset = 0;
   while (curr_n > 1) {
     g_offset += g_offsets[offset + curr_i];

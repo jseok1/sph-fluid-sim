@@ -89,6 +89,11 @@ void RenderShader::uniform(const std::string& uniformId, int uniform) const {
   glUniform1i(uniformLocation, uniform);
 }
 
+void RenderShader::uniform(const std::string& uniformId, unsigned int uniform) const {
+  GLint uniformLocation = glGetUniformLocation(programId, uniformId.c_str());
+  glUniform1ui(uniformLocation, uniform);
+}
+
 void RenderShader::uniform(const std::string& uniformId, float uniform) const {
   glUniform1f(glGetUniformLocation(programId, uniformId.c_str()), uniform);
 }

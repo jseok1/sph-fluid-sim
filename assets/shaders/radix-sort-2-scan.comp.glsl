@@ -1,5 +1,6 @@
 #version 460 core
 
+#define RADIX 256
 #define WORKGROUP_SIZE 256
 
 layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
@@ -10,6 +11,7 @@ layout(std430, binding = 4) buffer OffsetsBuffer {
 
 shared uint l_offsets[WORKGROUP_SIZE];
 
+uniform uint g_offsets_size;
 uniform uint offset;
 
 void main() {
@@ -35,6 +37,18 @@ void main() {
     barrier();
 
     stride *= 2;
+  }
+
+  // if (n_workgroups > 1) {
+  //   if (g_tid < ceil(n_workgroups / WORKGROUP_SIZE) * WORKGROUP_SIZE) {
+  //     g_offsets[offset + WORKGROUP_SIZE * n_workgroups + g_tid] = 0;
+  //   }
+  // }
+  // barrier();
+
+  // should optimize to only clear next layer
+  if (offset + WORKGROUP_SIZE * n_workgroups + g_tid < g_offsets_size) {
+    g_offsets[offset + WORKGROUP_SIZE * n_workgroups + g_tid] = 0;
   }
 
   if (l_tid == WORKGROUP_SIZE - 1) {

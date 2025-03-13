@@ -10,7 +10,7 @@ layout(std430, binding = 1) buffer StartIndicesBuffer {
 
 struct ParticleHandle {
   uint hash;
-  uint offset;
+  uint index;
 };
 
 layout(std430, binding = 2) buffer ParticleHandlesFrontBuffer {
