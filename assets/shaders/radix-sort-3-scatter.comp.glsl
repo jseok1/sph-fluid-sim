@@ -22,12 +22,10 @@ layout(std430, binding = 4) readonly buffer OffsetsBuffer {
   uint g_offsets[];
 };
 
-layout(std430, binding = 5) buffer LogBuffer {
-  uint log[];
-};
-
 uniform uint pass;
 uniform uint nParticles;
+
+shared uint l_offsets[RADIX];
 
 void main() {
   uint g_tid = gl_GlobalInvocationID.x;
@@ -39,14 +37,12 @@ void main() {
   uint key = handle.hash;
   uint digit = (key >> 8 * pass) & 0xFF;
 
-  uint l_offset;
-  // bad (could store within separate SSBO?)  -- better way to calculate in O(1)?
-  for (uint i = 0; i < 256; i++) {
-    if (((g_handles_front[wid * 256 + i].hash >> 8 * pass) & 0xFF) == digit) {
-      l_offset = i;
-      break;
-    }
+  if (l_tid == 0 || digit != ((g_handles_front[g_tid - 1].hash >> 8 * pass) & 0xFF)) {
+    l_offsets[digit] = l_tid;
   }
+  barrier();
+
+  uint l_offset = l_offsets[digit];
   uint g_offset = 0;
 
   uint curr_i = digit * n_workgroups + wid;
@@ -60,28 +56,5 @@ void main() {
     curr_n /= WORKGROUP_SIZE;
   }
 
-  // is this coalesced???
-  // ParticleHandle h;
-  // h.hash = 0;
-  // h.index = g_tid;
-  // g_handles_front[g_tid] = h; // this is fine
-  // g_handles_front[l_tid - l_offset + g_offset] = h; // this is not
-
-  // so writing to index g_handles_front[l_tid - l_offset + g_offset] is SUS
-
-  // g_handles_front[g_tid] = handle;  // this is fine
-  
-  // log looks wrong
-
-  // you're copying the same back buffer thing to here
-  // somehow the back buffer is being duplicated, so g_handles_back[g_tid] ends up in duplicates
-  g_handles_back[l_tid - l_offset + g_offset] = handle;  // this is not
-  log[g_tid] = l_tid - l_offset + g_offset;
-
-  // everything is fine until I ping-pong
-
-  // log[g_tid] = l_tid - l_offset + g_offset; // fine (also global indices are fine)
-  // log[l_tid - l_offset + g_offset] = handle.index; // fine 
-
-  // writing to g_handles_front causes duplication in g_handles_front AND g_handles_back
+  g_handles_back[l_tid - l_offset + g_offset] = handle;
 }

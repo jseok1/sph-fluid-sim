@@ -45,8 +45,7 @@ void main() {
   //   }
   // }
   // barrier();
-
-  // should optimize to only clear next layer
+  // ^ should optimize this below like above to only clear next layer
   if (offset + WORKGROUP_SIZE * n_workgroups + g_tid < g_offsets_size) {
     g_offsets[offset + WORKGROUP_SIZE * n_workgroups + g_tid] = 0;
   }

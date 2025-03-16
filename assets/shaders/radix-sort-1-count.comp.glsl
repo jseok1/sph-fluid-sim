@@ -115,7 +115,7 @@ void main() {
 
   // TODO: it's actually more efficient to handle 4 elements per invocation instead of just 1
 
-  g_offsets[l_tid * n_workgroups + wid] = 0;
+  // 0. bring into local memory
   l_handles_front[l_tid] = g_handles_front[g_tid];
 
   // 0. compute hash based on predicted position
@@ -154,10 +154,11 @@ void main() {
   atomicAdd(l_offsets[digit], 1);
   barrier();
 
+  // 3. copy local histogram to global histogram (in "column-major" order)
   if (l_tid < RADIX) {
     g_offsets[l_tid * n_workgroups + wid] = l_offsets[l_tid];
   }
-  barrier();
 
+  // 4. copy locally sorted values to global memory
   g_handles_front[g_tid] = l_handles_front[l_tid];
 }

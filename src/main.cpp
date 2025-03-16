@@ -176,8 +176,8 @@ int main() {
   // glBindTexture(GL_TEXTURE_2D, texture);
   // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_ nearEST);
+  // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_ nearEST);
   // glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
 
   // glBindImageTexture(0, texture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
@@ -416,7 +416,7 @@ int main() {
         radixSortCount.uniform("lookAhead", lookAhead);
         radixSortCount.uniform("pass", pass);
         glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
-        glMemoryBarrier(GL_ALL_BARRIER_BITS);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
         radixSortScan.use();
         curr_n = ceil(static_cast<float>(nParticles) / WORKGROUP_SIZE) * RADIX;
@@ -427,7 +427,7 @@ int main() {
           offset += ceil(static_cast<float>(curr_n) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
 
           glDispatchCompute((unsigned int)ceil(static_cast<float>(curr_n) / WORKGROUP_SIZE), 1, 1);
-          glMemoryBarrier(GL_ALL_BARRIER_BITS);
+          glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
           curr_n /= WORKGROUP_SIZE;
         }
@@ -436,23 +436,21 @@ int main() {
         radixSortScatter.uniform("pass", pass);
         radixSortScatter.uniform("nParticles", (unsigned int)nParticles);
         glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
-        glMemoryBarrier(GL_ALL_BARRIER_BITS);
-
-        // maybe Im not using  GL_ALL_BARRIER_BITS correctly
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
         radixSortSwap.use();
         glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
-        glMemoryBarrier(GL_ALL_BARRIER_BITS);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
       }
 
       // startIndicesClear.use();
       // startIndicesClear.uniform("mHash", mHash);
       // glDispatchCompute((unsigned int)mHash / WORKGROUP_SIZE, 1, 1);
-      // glMemoryBarrier( GL_ALL_BARRIER_BITS);
+      // glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT);
 
       // startIndicesUpdate.use();
       // glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
-      // glMemoryBarrier( GL_ALL_BARRIER_BITS);
+      // glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT);
 
       // physics update
       // --------------
@@ -462,7 +460,7 @@ int main() {
       // sph1.uniform("smoothingRadius", smoothingRadius);
       // sph1.uniform("lookAhead", lookAhead);
       // glDispatchCompute((unsigned int)nParticles / 128, 1, 1);  // TODO make 128 a macro
-      // glMemoryBarrier( GL_ALL_BARRIER_BITS);
+      // glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT);
 
       // sph2.use();
       // sph2.uniform("deltaTime", deltaTime);
@@ -475,7 +473,7 @@ int main() {
       // sph2.uniform("tankWidth", tankWidth);
       // sph2.uniform("time", currTime);
       // glDispatchCompute((unsigned int)nParticles / 128, 1, 1);
-      // glMemoryBarrier( GL_ALL_BARRIER_BITS);
+      // glMemoryBarrier( GL_SHADER_STORAGE_BARRIER_BIT);
 
       accumulatedTime -= deltaTime;
     }

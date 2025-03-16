@@ -22,12 +22,7 @@ void main() {
 
   uint key = g_handles_front[g_tid].hash;
 
-  if (g_tid == 0) {
-    startIndices[key] = 0;
-    return;
-  }
-
-  if (key != g_handles_front[g_tid - 1].hash) {
+  if (g_tid == 0 || key != g_handles_front[g_tid - 1].hash) {
     startIndices[key] = g_tid;
   }
 }
