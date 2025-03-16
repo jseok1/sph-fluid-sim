@@ -15,8 +15,8 @@ layout(std430, binding = 0) buffer Particles {
   Particle particles[];
 };
 
-layout(std430, binding = 1) buffer StartIndicesBuffer {
-  uint startIndices[];
+layout(std430, binding = 1) buffer g_startIndicesBuffer {
+  uint g_startIndices[];
 };
 
 struct ParticleHandle {
@@ -28,6 +28,42 @@ layout(std430, binding = 2) buffer ParticleHandlesFrontBuffer {
   ParticleHandle g_handles_front[];
 };
 
+layout(std430, binding = 5) buffer LogBuffer {
+  uint log[];
+};
+
+// clang-format off
+  vec3 neighborhood[27] = {
+    vec3( 0.0,  0.0,  0.0),
+    vec3(-1.0, -1.0, -1.0),
+    vec3(-1.0, -1.0,  0.0),
+    vec3(-1.0, -1.0,  1.0),
+    vec3(-1.0,  0.0, -1.0),
+    vec3(-1.0,  0.0,  0.0),
+    vec3(-1.0,  0.0,  1.0),
+    vec3(-1.0,  1.0, -1.0),
+    vec3(-1.0,  1.0,  0.0),
+    vec3(-1.0,  1.0,  1.0),
+    vec3( 0.0, -1.0, -1.0),
+    vec3( 0.0, -1.0,  0.0),
+    vec3( 0.0, -1.0,  1.0),
+    vec3( 0.0,  0.0, -1.0),
+    vec3( 0.0,  0.0,  1.0),
+    vec3( 0.0,  1.0, -1.0),
+    vec3( 0.0,  1.0,  0.0),
+    vec3( 0.0,  1.0,  1.0),
+    vec3( 1.0, -1.0, -1.0),
+    vec3( 1.0, -1.0,  0.0),
+    vec3( 1.0, -1.0,  1.0),
+    vec3( 1.0,  0.0, -1.0),
+    vec3( 1.0,  0.0,  0.0),
+    vec3( 1.0,  0.0,  1.0),
+    vec3( 1.0,  1.0, -1.0),
+    vec3( 1.0,  1.0,  0.0),
+    vec3( 1.0,  1.0,  1.0),
+  };
+// clang-format on
+
 uniform uint nParticles;
 uniform uint mHash;
 uniform float smoothingRadius;
@@ -38,43 +74,11 @@ const float pi = 3.1415926535;
 const float restDensity = 0.0;
 const float gas = 8.31 * 0.5;
 
-// clang-format off
-vec3 neighborhood[27] = {
-  vec3(-1.0, -1.0, -1.0),
-  vec3(-1.0, -1.0,  0.0),
-  vec3(-1.0, -1.0,  1.0),
-  vec3(-1.0,  0.0, -1.0),
-  vec3(-1.0,  0.0,  0.0),
-  vec3(-1.0,  0.0,  1.0),
-  vec3(-1.0,  1.0, -1.0),
-  vec3(-1.0,  1.0,  0.0),
-  vec3(-1.0,  1.0,  1.0),
-  vec3( 0.0, -1.0, -1.0),
-  vec3( 0.0, -1.0,  0.0),
-  vec3( 0.0, -1.0,  1.0),
-  vec3( 0.0,  0.0, -1.0),
-  vec3( 0.0,  0.0,  0.0),
-  vec3( 0.0,  0.0,  1.0),
-  vec3( 0.0,  1.0, -1.0),
-  vec3( 0.0,  1.0,  0.0),
-  vec3( 0.0,  1.0,  1.0),
-  vec3( 1.0, -1.0, -1.0),
-  vec3( 1.0, -1.0,  0.0),
-  vec3( 1.0, -1.0,  1.0),
-  vec3( 1.0,  0.0, -1.0),
-  vec3( 1.0,  0.0,  0.0),
-  vec3( 1.0,  0.0,  1.0),
-  vec3( 1.0,  1.0, -1.0),
-  vec3( 1.0,  1.0,  0.0),
-  vec3( 1.0,  1.0,  1.0),
-};
-// clang-format on
-
 uint hash(vec3 position) {
   uint hash = uint(mod(
-    (uint(floor(position[0] / smoothingRadius)) * 73856093) ^
-      (uint(floor(position[1] / smoothingRadius)) * 19349663) ^
-      (uint(floor(position[2] / smoothingRadius)) * 83492791),
+    (uint(floor((position.x + 15.0) / smoothingRadius)) * 73856093) ^
+      (uint(floor((position.y + 15.0) / smoothingRadius)) * 19349663) ^
+      (uint(floor((position.z + 15.0) / smoothingRadius)) * 83492791),
     mHash
   ));
   return hash;
@@ -93,10 +97,13 @@ float density(Particle particle) {
 
   vec3 position_pred = position + velocity * lookAhead;
 
+  // log[gl_GlobalInvocationID.x] = 0;
+
   float density = 0.0;
-  for (uint j = 0; j < 27; j++) {
+  for (uint j = 0; j < 1; j++) {
     uint hash = hash(position_pred + neighborhood[j] * smoothingRadius);
-    uint k = startIndices[hash];
+    // log[gl_GlobalInvocationID.x] = hash;
+    uint k = g_startIndices[hash];
     while (k < nParticles && g_handles_front[k].hash == hash) {
       Particle neighbor = particles[g_handles_front[k].index];
       vec3 neighbor_position =
@@ -106,8 +113,10 @@ float density(Particle particle) {
 
       vec3 neighbor_position_pred = neighbor_position + neighbor_velocity * lookAhead;
 
+      // why are some 0?
       density += neighbor.mass * poly6(position_pred, neighbor_position_pred);
 
+      // log[gl_GlobalInvocationID.x]++;
       k++;
     }
   }

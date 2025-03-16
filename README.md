@@ -45,6 +45,11 @@ https://ramakarl.com/pdfs/2014_Hoetzlein_FastFixedRadius_Neighbors.pdf
 uniform grid -> using index sort (optimize further using Z-curves - also important on GPU?) (handles with insertion sort)
 -> (better memory) using spatial hashing (very simple)
 
+https://ephyslab.uvigo.es/publica/documents/file_259Dominguez_etal_2010_IJNMF_DOI.pdf
+"sliding vector, static matrix, linked list"
+CLL vs. Verlet (does CLL mean uniform grid?)
+
+
 SESPH - 
 PCISPH - predicted position and velocity
 

@@ -224,14 +224,15 @@ int main() {
   }
 
   // TODO: wrap everything in the try-catch
-  ComputeShader sph1, sph2, radixSortCount, radixSortScan, radixSortScatter, startIndicesClear,
-    startIndicesUpdate;
+  ComputeShader sph1, sph2, radixSortCount, radixSortScan, radixSortScatter, radixSortSwap,
+    startIndicesClear, startIndicesUpdate;
   try {
     sph1.build("./assets/shaders/sph-1.comp.glsl");
     sph2.build("./assets/shaders/sph-2.comp.glsl");
     radixSortCount.build("./assets/shaders/radix-sort-1-count.comp.glsl");
     radixSortScan.build("./assets/shaders/radix-sort-2-scan.comp.glsl");
     radixSortScatter.build("./assets/shaders/radix-sort-3-scatter.comp.glsl");
+    radixSortSwap.build("./assets/shaders/radix-sort-4-swap.comp.glsl");
     startIndicesClear.build("./assets/shaders/start-indices-1-clear.comp.glsl");
     startIndicesUpdate.build("./assets/shaders/start-indices-2-update.comp.glsl");
   } catch (const std::exception& err) {
@@ -244,9 +245,9 @@ int main() {
   densityGradient.use(0);
 
   // particles (dims should be a multiple of two)
-  const int fluidX = 16;
+  const int fluidX = 8;
   const int fluidY = 16;
-  const int fluidZ = 16;
+  const int fluidZ = 8;
   const unsigned int nParticles = fluidX * fluidY * fluidZ;
   static_assert(nParticles % WORKGROUP_SIZE == 0);
 
@@ -264,7 +265,7 @@ int main() {
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particlesSSBO);
 
   // hashes
-  const unsigned int mHash = WORKGROUP_SIZE * 8;
+  const unsigned int mHash = WORKGROUP_SIZE * 256;
   std::array<unsigned int, mHash> hashes;
   hashes.fill(0);
 
@@ -337,8 +338,7 @@ int main() {
   std::vector<ParticleHandle> back(nParticles);
 
   for (int i = 0; i < nParticles; i++) {
-    // front[i].hash = nParticles - i;
-    front[i].index = i;  // can leave the rest uninitialized? if there's a bug, check here
+    front[i].index = i;
   }
 
   unsigned int frontSSBO;
@@ -384,7 +384,7 @@ int main() {
 
   // DEMO PARALLEL
 
-  float deltaTime = 1.0f / 144.0f;
+  const float deltaTime = 1.0f / 144.0f;
   float prevTime = glfwGetTime();
   float accumulatedTime = 0.0f;
 
@@ -406,19 +406,17 @@ int main() {
       if (state.isMovingUpward) delta += v * speed * deltaTime;
       state.camera.translateBy(delta);
 
-      // look into this - 4-5 physics updates per frame??
-
       // sorting
       // -------
-      // 8-bit per pass → 4 passes for 32-bit keys
-      for (unsigned int pass = 0; pass < 4; pass++) {
+      // 8-bit per pass → 4 passes for 32-bit keys (technically can be hash size)
+      for (unsigned int pass = 0; pass < 1; pass++) {
         radixSortCount.use();
         radixSortCount.uniform("mHash", mHash);
         radixSortCount.uniform("smoothingRadius", smoothingRadius);
         radixSortCount.uniform("lookAhead", lookAhead);
         radixSortCount.uniform("pass", pass);
         glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        glMemoryBarrier(GL_ALL_BARRIER_BITS);
 
         radixSortScan.use();
         curr_n = ceil(static_cast<float>(nParticles) / WORKGROUP_SIZE) * RADIX;
@@ -429,7 +427,7 @@ int main() {
           offset += ceil(static_cast<float>(curr_n) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
 
           glDispatchCompute((unsigned int)ceil(static_cast<float>(curr_n) / WORKGROUP_SIZE), 1, 1);
-          glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+          glMemoryBarrier(GL_ALL_BARRIER_BITS);
 
           curr_n /= WORKGROUP_SIZE;
         }
@@ -438,17 +436,23 @@ int main() {
         radixSortScatter.uniform("pass", pass);
         radixSortScatter.uniform("nParticles", (unsigned int)nParticles);
         glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        glMemoryBarrier(GL_ALL_BARRIER_BITS);
+
+        // maybe Im not using  GL_ALL_BARRIER_BITS correctly
+
+        radixSortSwap.use();
+        glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
+        glMemoryBarrier(GL_ALL_BARRIER_BITS);
       }
 
-      startIndicesClear.use();
-      startIndicesClear.uniform("mHash", mHash);
-      glDispatchCompute((unsigned int)mHash / WORKGROUP_SIZE, 1, 1);
-      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+      // startIndicesClear.use();
+      // startIndicesClear.uniform("mHash", mHash);
+      // glDispatchCompute((unsigned int)mHash / WORKGROUP_SIZE, 1, 1);
+      // glMemoryBarrier( GL_ALL_BARRIER_BITS);
 
-      startIndicesUpdate.use();
-      glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
-      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+      // startIndicesUpdate.use();
+      // glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
+      // glMemoryBarrier( GL_ALL_BARRIER_BITS);
 
       // physics update
       // --------------
@@ -458,7 +462,7 @@ int main() {
       // sph1.uniform("smoothingRadius", smoothingRadius);
       // sph1.uniform("lookAhead", lookAhead);
       // glDispatchCompute((unsigned int)nParticles / 128, 1, 1);  // TODO make 128 a macro
-      // glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+      // glMemoryBarrier( GL_ALL_BARRIER_BITS);
 
       // sph2.use();
       // sph2.uniform("deltaTime", deltaTime);
@@ -471,7 +475,7 @@ int main() {
       // sph2.uniform("tankWidth", tankWidth);
       // sph2.uniform("time", currTime);
       // glDispatchCompute((unsigned int)nParticles / 128, 1, 1);
-      // glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+      // glMemoryBarrier( GL_ALL_BARRIER_BITS);
 
       accumulatedTime -= deltaTime;
     }

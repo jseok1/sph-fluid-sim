@@ -34,6 +34,7 @@ const float pi = 3.1415926535;
 
 // clang-format off
 vec3 neighborhood[27] = {
+  vec3( 0.0,  0.0,  0.0),
   vec3(-1.0, -1.0, -1.0),
   vec3(-1.0, -1.0,  0.0),
   vec3(-1.0, -1.0,  1.0),
@@ -47,7 +48,6 @@ vec3 neighborhood[27] = {
   vec3( 0.0, -1.0,  0.0),
   vec3( 0.0, -1.0,  1.0),
   vec3( 0.0,  0.0, -1.0),
-  vec3( 0.0,  0.0,  0.0),
   vec3( 0.0,  0.0,  1.0),
   vec3( 0.0,  1.0, -1.0),
   vec3( 0.0,  1.0,  0.0),
@@ -72,9 +72,9 @@ uniform float lookAhead;
 uniform uint mHash;
 uint hash(vec3 position) {
   uint hash = uint(mod(
-    (uint(floor(position.x / smoothingRadius)) * 73856093) ^
-      (uint(floor(position.y / smoothingRadius)) * 19349663) ^
-      (uint(floor(position.z / smoothingRadius)) * 83492791),
+    (uint(floor((position.x + 15.0) / smoothingRadius)) * 73856093) ^
+      (uint(floor((position.y + 15.0) / smoothingRadius)) * 19349663) ^
+      (uint(floor((position.z + 15.0) / smoothingRadius)) * 83492791),
     mHash
   ));
 
@@ -118,7 +118,7 @@ void main() {
   vec3 velocity = vec3(particle.velocity[0], particle.velocity[1], particle.velocity[2]);
 
   fHash = vec4(0.25, 0.25, 0.75, 0.5);
-  for (int i = 0; i < 27; i++) {
+  for (int i = 0; i < 1; i++) {
     uint h = hash(position);
     log[gl_BaseInstance + gl_InstanceID] = h;
     if (h == hash(vec3(1.0) + neighborhood[i] * smoothingRadius)) {

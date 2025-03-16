@@ -13,7 +13,7 @@ struct ParticleHandle {
   uint index;
 };
 
-layout(std430, binding = 2) buffer ParticleHandlesFrontBuffer {
+layout(std430, binding = 2) readonly buffer ParticleHandlesFrontBuffer {
   ParticleHandle g_handles_front[];
 };
 
