@@ -22,6 +22,10 @@ layout(std430, binding = 4) readonly buffer OffsetsBuffer {
   uint g_offsets[];
 };
 
+layout(std430, binding = 5) buffer LogBuffer {
+  uint log[];
+};
+
 uniform uint pass;
 uniform uint nParticles;
 
@@ -57,4 +61,6 @@ void main() {
   }
 
   g_handles_back[l_tid - l_offset + g_offset] = handle;
+
+  log[g_tid] = l_tid - l_offset + g_offset;
 }

@@ -20,5 +20,5 @@ layout(std430, binding = 3) readonly buffer ParticleHandlesBackBuffer {
 void main() {
   uint g_tid = gl_GlobalInvocationID.x;
 
-  // g_handles_front[g_tid] = g_handles_back[g_tid];
+  g_handles_front[g_tid] = g_handles_back[g_tid];
 }

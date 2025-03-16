@@ -43,4 +43,4 @@ print(len(set(back[" g_handles_back.index"])))
 
 sort = pd.read_csv("b.csv")
 s = sort[" g_handles_back.hash"] & 0xFF
-print(list(s) == sorted(list(s)))
+print("back is sorted:", list(s) == sorted(list(s)))
