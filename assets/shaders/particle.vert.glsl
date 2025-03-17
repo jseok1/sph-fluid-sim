@@ -120,7 +120,7 @@ void main() {
   fHash = vec4(0.25, 0.25, 0.75, 0.5);
   for (int i = 0; i < 1; i++) {
     uint h = hash(position);
-    log[gl_BaseInstance + gl_InstanceID] = h;
+    // log[gl_BaseInstance + gl_InstanceID] = h;
     if (h == hash(vec3(1.0) + neighborhood[i] * smoothingRadius)) {
       fHash = vec4(0.75, 0.25, 0.25, 1.0);
     }

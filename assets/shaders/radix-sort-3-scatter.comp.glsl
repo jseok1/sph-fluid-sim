@@ -1,7 +1,7 @@
 #version 460 core
 
 #define RADIX 256
-#define WORKGROUP_SIZE 256
+#define WORKGROUP_SIZE 256  // workgroup size ≥ radix
 
 layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
@@ -22,8 +22,18 @@ layout(std430, binding = 4) readonly buffer OffsetsBuffer {
   uint g_offsets[];
 };
 
+struct LogThing {
+  uint g_tid;
+  uint l_tid;
+  uint g_offset;
+  // uint g_offset_1;
+  // uint g_offset_2;
+  uint l_offset;
+  uint scatter;
+};
+
 layout(std430, binding = 5) buffer LogBuffer {
-  uint log[];
+  LogThing log[];
 };
 
 uniform uint pass;
@@ -59,8 +69,16 @@ void main() {
 
     curr_n /= WORKGROUP_SIZE;
   }
+  // uint hist_idx = digit * n_workgroups + wid;
+  // uint g_offset = g_offsets[hist_idx] + g_offsets[RADIX * n_workgroups + hist_idx / WORKGROUP_SIZE];
 
   g_handles_back[l_tid - l_offset + g_offset] = handle;
 
-  log[g_tid] = l_tid - l_offset + g_offset;
+  log[g_tid].g_tid = g_tid;
+  log[g_tid].l_tid = l_tid;
+  log[g_tid].g_offset = g_offset;
+  // log[g_tid].g_offset_1 = g_offsets[hist_idx];
+  // log[g_tid].g_offset_2 = g_offsets[RADIX * n_workgroups + hist_idx / WORKGROUP_SIZE];
+  log[g_tid].l_offset = l_offset;
+  log[g_tid].scatter = l_tid - l_offset + g_offset;
 }

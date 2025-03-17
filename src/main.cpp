@@ -1,5 +1,5 @@
 #define RADIX 256
-#define WORKGROUP_SIZE 256
+#define WORKGROUP_SIZE 256  // workgroup size ≥ radix
 
 // clang-format off
 #include <glad/glad.h>
@@ -245,11 +245,12 @@ int main() {
   densityGradient.use(0);
 
   // particles (dims should be a multiple of two)
-  const int fluidX = 8;
+  const int fluidX = 16;
   const int fluidY = 16;
-  const int fluidZ = 8;
+  const int fluidZ = 16;
   const unsigned int nParticles = fluidX * fluidY * fluidZ;
   static_assert(nParticles % WORKGROUP_SIZE == 0);
+  static_assert(WORKGROUP_SIZE >= RADIX);
 
   Fluid fluid(fluidX, fluidY, fluidZ);
 
@@ -378,11 +379,23 @@ int main() {
   glGenBuffers(1, &logSSBO);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, logSSBO);
   glBufferData(
-    GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * log.size(), log.data(), GL_DYNAMIC_DRAW
+    GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * 5 * log.size(), log.data(), GL_DYNAMIC_DRAW
   );
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, logSSBO);
 
   // DEMO PARALLEL
+
+  int maxSSBOSize;
+  glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &maxSSBOSize);
+  printf("Max SSBO size: %d bytes\n", maxSSBOSize);
+
+  int maxSSBOBindings;
+  glGetIntegerv(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS, &maxSSBOBindings);
+  printf("Max SSBO bindings: %d\n", maxSSBOBindings);
+
+  int maxComputeSSBOs;
+  glGetIntegerv(GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS, &maxComputeSSBOs);
+  printf("Max SSBOs in compute shader: %d\n", maxComputeSSBOs);
 
   const float deltaTime = 1.0f / 144.0f;
   float prevTime = glfwGetTime();

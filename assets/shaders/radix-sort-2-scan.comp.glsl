@@ -1,7 +1,7 @@
 #version 460 core
 
 #define RADIX 256
-#define WORKGROUP_SIZE 256
+#define WORKGROUP_SIZE 256  // workgroup size ≥ radix
 
 layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
