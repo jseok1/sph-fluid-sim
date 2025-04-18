@@ -6,10 +6,10 @@
 layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 layout(std430, binding = 4) buffer OffsetsBuffer {
-  uint g_offsets[];
+  uint g_histogram[];
 };
 
-shared uint l_offsets[WORKGROUP_SIZE];
+shared uint l_histogram[WORKGROUP_SIZE];
 
 uniform uint g_offsets_size;
 uniform uint offset;
@@ -18,9 +18,9 @@ void main() {
   uint g_tid = gl_GlobalInvocationID.x;
   uint l_tid = gl_LocalInvocationID.x;
   uint wid = gl_WorkGroupID.x;
-  uint n_workgroups = gl_NumWorkGroups.x;
+  uint WORKGROUPS = gl_NumWorkGroups.x;
 
-  l_offsets[l_tid] = g_offsets[offset + g_tid];
+  l_histogram[l_tid] = g_histogram[offset + g_tid];
   barrier();
 
   uint stride = 2;
@@ -32,29 +32,29 @@ void main() {
       uint i = WORKGROUP_SIZE - 1 - (stride * l_tid);
       uint j = WORKGROUP_SIZE - 1 - (stride * l_tid + stride / 2);
 
-      l_offsets[i] += l_offsets[j];
+      l_histogram[i] += l_histogram[j];
     }
     barrier();
 
     stride *= 2;
   }
 
-  // if (n_workgroups > 1) {
-  //   if (g_tid < ceil(n_workgroups / WORKGROUP_SIZE) * WORKGROUP_SIZE) {
-  //     g_offsets[offset + WORKGROUP_SIZE * n_workgroups + g_tid] = 0;
+  // if (WORKGROUPS > 1) {
+  //   if (g_tid < ceil(WORKGROUPS / WORKGROUP_SIZE) * WORKGROUP_SIZE) {
+  //     g_histogram[offset + WORKGROUP_SIZE * WORKGROUPS + g_tid] = 0;
   //   }
   // }
   // barrier();
   // ^ should optimize this below like above to only clear next layer
-  if (offset + WORKGROUP_SIZE * n_workgroups + g_tid < g_offsets_size) {
-    g_offsets[offset + WORKGROUP_SIZE * n_workgroups + g_tid] = 0;
-  }
+  // if (offset + WORKGROUP_SIZE * WORKGROUPS + g_tid < g_offsets_size) {
+  //   g_histogram[offset + WORKGROUP_SIZE * WORKGROUPS + g_tid] = 0;
+  // }
 
   if (l_tid == WORKGROUP_SIZE - 1) {
-    if (n_workgroups > 1) {
-      g_offsets[offset + WORKGROUP_SIZE * n_workgroups + wid] = l_offsets[l_tid];
+    if (WORKGROUPS > 1) {
+      g_histogram[offset + WORKGROUP_SIZE * WORKGROUPS + wid] = l_histogram[l_tid];
     }
-    l_offsets[l_tid] = 0;
+    l_histogram[l_tid] = 0;
   }
   barrier();
 
@@ -65,13 +65,13 @@ void main() {
     if (l_tid < d) {
       uint i = WORKGROUP_SIZE - 1 - (stride * l_tid);
       uint j = WORKGROUP_SIZE - 1 - (stride * l_tid + stride / 2);
-      uint l_offset = l_offsets[i];
+      uint l_offset = l_histogram[i];
 
-      l_offsets[i] += l_offsets[j];
-      l_offsets[j] = l_offset;
+      l_histogram[i] += l_histogram[j];
+      l_histogram[j] = l_offset;
     }
     barrier();
   }
 
-  g_offsets[offset + g_tid] = l_offsets[l_tid];
+  g_histogram[offset + g_tid] = l_histogram[l_tid];
 }

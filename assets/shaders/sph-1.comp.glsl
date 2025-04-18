@@ -65,7 +65,7 @@ layout(std430, binding = 5) buffer LogBuffer {
 // clang-format on
 
 uniform uint nParticles;
-uniform uint mHash;
+uniform uint HASH_TABLE_SIZE;
 uniform float smoothingRadius;
 uniform float lookAhead;
 
@@ -79,7 +79,7 @@ uint hash(vec3 position) {
     (uint(floor((position.x + 15.0) / smoothingRadius)) * 73856093) ^
       (uint(floor((position.y + 15.0) / smoothingRadius)) * 19349663) ^
       (uint(floor((position.z + 15.0) / smoothingRadius)) * 83492791),
-    mHash
+    HASH_TABLE_SIZE
   ));
   return hash;
 }

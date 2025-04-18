@@ -33,16 +33,16 @@ layout(std430, binding = 2) buffer ParticleHandlesFrontBuffer {
 // };
 
 layout(std430, binding = 4) buffer OffsetsBuffer {
-  uint g_offsets[];
+  uint g_histogram[];
 };
 
 shared uint false_total;
 shared ParticleHandle l_handles_front[WORKGROUP_SIZE];
-shared uint l_offsets[RADIX];
+shared uint l_histogram[RADIX];
 shared uint l_offsets_bitwise[RADIX];
 
 uniform float lookAhead;
-uniform uint mHash;
+uniform uint HASH_TABLE_SIZE;
 uniform float smoothingRadius;
 uniform uint pass;
 
@@ -51,7 +51,7 @@ uint hash(vec3 position) {
     (uint(floor((position.x + 15.0) / smoothingRadius)) * 73856093) ^
       (uint(floor((position.y + 15.0) / smoothingRadius)) * 19349663) ^
       (uint(floor((position.z + 15.0) / smoothingRadius)) * 83492791),
-    mHash
+    HASH_TABLE_SIZE
   ));
   return hash;
 }
@@ -111,7 +111,7 @@ void main() {
   uint g_tid = gl_GlobalInvocationID.x;
   uint l_tid = gl_LocalInvocationID.x;
   uint wid = gl_WorkGroupID.x;
-  uint n_workgroups = gl_NumWorkGroups.x;
+  uint WORKGROUPS = gl_NumWorkGroups.x;
 
   // TODO: it's actually more efficient to handle 4 elements per invocation instead of just 1
 
@@ -125,6 +125,7 @@ void main() {
     vec3 position = vec3(particle.position[0], particle.position[1], particle.position[2]);
     vec3 velocity = vec3(particle.velocity[0], particle.velocity[1], particle.velocity[2]);
     handle.hash = hash(position + velocity * lookAhead);
+    handle.hash = WORKGROUP_SIZE * WORKGROUPS - g_tid;
     l_handles_front[l_tid] = handle;
   }
 
@@ -144,19 +145,19 @@ void main() {
 
   // 2. local histogram and offsets
   if (l_tid < RADIX) {
-    l_offsets[l_tid] = 0;
+    l_histogram[l_tid] = 0;
   }
   barrier();
 
   uint key = l_handles_front[l_tid].hash;
   uint digit = (key >> RADIX_SIZE * pass) & 0xFF;
 
-  atomicAdd(l_offsets[digit], 1);
+  atomicAdd(l_histogram[digit], 1);
   barrier();
 
   // 3. copy local histogram to global histogram (in "column-major" order)
   if (l_tid < RADIX) {
-    g_offsets[l_tid * n_workgroups + wid] = l_offsets[l_tid];
+    g_histogram[l_tid * WORKGROUPS + wid] = l_histogram[l_tid];
   }
 
   // 4. copy locally sorted values to global memory

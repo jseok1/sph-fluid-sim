@@ -19,3 +19,9 @@ find_package(glm REQUIRED)
 find_package(stb REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE assimp::assimp glfw glm::glm stb::stb)
 target_link_libraries(${PROJECT_NAME} PUBLIC glad::glad)
+
+add_custom_target(copy_assets ALL
+  COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/assets ${PROJECT_BINARY_DIR}/assets
+  COMMENT "Copying assets into build..."
+)
+add_dependencies(${PROJECT_NAME} copy_assets)

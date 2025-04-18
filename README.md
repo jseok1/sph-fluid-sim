@@ -75,7 +75,7 @@ radix is one of the fastest for short keys (which in this case will be bounded f
 Z-index sort uses insertion sort
 
 maybe try radix, merge, and bitonic
-Could even terminate radix sort early based on mHash number of bits?
+Could even terminate radix sort early based on HASH_TABLE_SIZE number of bits?
 
 parallel radix sort
 https://gpuopen.com/download/publications/Introduction_to_GPU_Radix_Sort.pdf

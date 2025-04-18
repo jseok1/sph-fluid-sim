@@ -69,13 +69,13 @@ layout(std430, binding = 5) buffer LogBuffer {
 };
 
 uniform float lookAhead;
-uniform uint mHash;
+uniform uint HASH_TABLE_SIZE;
 uint hash(vec3 position) {
   uint hash = uint(mod(
     (uint(floor((position.x + 15.0) / smoothingRadius)) * 73856093) ^
       (uint(floor((position.y + 15.0) / smoothingRadius)) * 19349663) ^
       (uint(floor((position.z + 15.0) / smoothingRadius)) * 83492791),
-    mHash
+    HASH_TABLE_SIZE
   ));
 
   return hash;

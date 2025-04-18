@@ -3,14 +3,21 @@ import pandas as pd
 from collections import Counter
 
 log = pd.read_csv("log.csv")
-print(len(set(log[" log.scatter"])), min(set(log[" log.scatter"])), max(set(log[" log.scatter"])))
+print(
+    "unique:",
+    len(set(log[" log.scatter"])),
+    "min:",
+    min(set(log[" log.scatter"])),
+    "max:",
+    max(set(log[" log.scatter"])),
+)
 # print([(k, v) for k, v in Counter(log[" log.scatter"]).items() if v > 1])
 
 front = pd.read_csv("f.csv")
-print(len(set(front[" g_handles_front.index"])))
+print("front unique", len(set(front[" g_handles_front.index"])))
 
 back = pd.read_csv("b.csv")
-print(len(set(back[" g_handles_back.index"])))
+print("back unique", len(set(back[" g_handles_back.index"])))
 # print([(k, v) for k, v in Counter(back[" g_handles_back.index"]).items() if v > 1])
 
 
@@ -19,6 +26,14 @@ back_list = list(back[" g_handles_back.hash"] & 0xFF)
 print("front is sorted:", front_list == sorted(front_list))
 print("back is sorted:", back_list == sorted(back_list))
 
+
+yes = True
+for i in range(len(front_list) // 256):
+    yes = yes and (
+        front_list[256 * i : 256 * (i + 1)]
+        == sorted(front_list[256 * i : 256 * (i + 1)])
+    )
+print("local radix sort working?", yes)
 
 # sim = pd.read_csv('log8168-before.csv')
 # front = pd.read_csv('front8168-before.csv')
@@ -48,7 +63,7 @@ print("back is sorted:", back_list == sorted(back_list))
 # but also before scatter, back is correct
 # the scatter operation MODIFIES THE BACK BUFFER
 
-# print([k for k,v in Counter(front[' g_handles_front.index']).items() if v > 1 ])
+print([k for k,v in Counter(log[' log.scatter']).items() if v > 1 ])
 
 # Element, log.g_tid, log.l_tid, log.g_offset, log.l_offset, log.scatter
 #      451,      451,        195,         725,          195,     725
@@ -68,3 +83,9 @@ print("back is sorted:", back_list == sorted(back_list))
 # offsets[4 * 192 + 1 (769)] = 0 + 875????
 
 # g_offset should be 566 and 875, respectively -- why is it 725?
+
+
+# scatter offsets have duplicates
+# l_tid is correct
+
+
