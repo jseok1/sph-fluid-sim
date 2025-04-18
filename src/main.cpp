@@ -205,14 +205,14 @@ int main() {
 
   // TODO: wrap everything in the try-catch
   ComputeShader sph1, sph2, radixSortCount, radixSortScan, radixSortScatter, radixSortSwap,
-    startIndicesClear, startIndicesUpdate;
+    hashIndicesClear, hashIndices;
   try {
     sph1.build("./assets/shaders/sph-1.comp.glsl");
     sph2.build("./assets/shaders/sph-2.comp.glsl");
     radixSortCount.build("./assets/shaders/radix-sort-1-count.comp.glsl");
     radixSortScan.build("./assets/shaders/radix-sort-2-scan.comp.glsl");
     radixSortScatter.build("./assets/shaders/radix-sort-3-scatter.comp.glsl");
-    startIndicesUpdate.build("./assets/shaders/start-indices-2-update.comp.glsl");
+    hashIndices.build("./assets/shaders/hash-indices.comp.glsl");
   } catch (const std::exception& err) {
     std::cerr << err.what();
     return 1;
@@ -245,13 +245,13 @@ int main() {
 
   // hashes
   const unsigned int HASH_TABLE_SIZE = WORKGROUP_SIZE * 256;
-  unsigned int startIndicesSSBO;
-  glGenBuffers(1, &startIndicesSSBO);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, startIndicesSSBO);
+  unsigned int hashIndicesSSBO;
+  glGenBuffers(1, &hashIndicesSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, hashIndicesSSBO);
   glBufferData(
     GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * HASH_TABLE_SIZE, nullptr, GL_DYNAMIC_DRAW
   );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, startIndicesSSBO);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, hashIndicesSSBO);
 
   // param
   float smoothingRadius = 0.5f;
@@ -320,7 +320,6 @@ int main() {
   unsigned int frontSSBO;
   glGenBuffers(1, &frontSSBO);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, frontSSBO);
-  glBindBuffer(GL_COPY_WRITE_BUFFER, frontSSBO);
   glBufferData(
     GL_SHADER_STORAGE_BUFFER, sizeof(ParticleHandle) * front.size(), front.data(), GL_DYNAMIC_DRAW
   );
@@ -329,7 +328,6 @@ int main() {
   unsigned int backSSBO;
   glGenBuffers(1, &backSSBO);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, backSSBO);
-  glBindBuffer(GL_COPY_READ_BUFFER, backSSBO);
   glBufferData(
     GL_SHADER_STORAGE_BUFFER, sizeof(ParticleHandle) * back.size(), back.data(), GL_DYNAMIC_DRAW
   );
@@ -342,11 +340,11 @@ int main() {
     curr_n /= WORKGROUP_SIZE;
   }
 
-  unsigned int offsetsSSBO;
-  glGenBuffers(1, &offsetsSSBO);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, offsetsSSBO);
+  unsigned int histogramSSBO;
+  glGenBuffers(1, &histogramSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, histogramSSBO);
   glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * total_n, nullptr, GL_DYNAMIC_DRAW);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, offsetsSSBO);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, histogramSSBO);
   glClearBufferData(GL_SHADER_STORAGE_BUFFER, GL_R32F, GL_RED, GL_FLOAT, nullptr);
 
   unsigned int logSSBO;
@@ -398,7 +396,7 @@ int main() {
       // -------
       // 8-bit per pass → 4 passes for 32-bit keys (technically can be hash size)
       for (unsigned int pass = 0; pass < 4; pass++) {
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, offsetsSSBO);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, histogramSSBO);
         glClearBufferData(GL_SHADER_STORAGE_BUFFER, GL_R32F, GL_RED, GL_FLOAT, nullptr);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
@@ -429,22 +427,15 @@ int main() {
         radixSortScatter.uniform("nParticles", (unsigned int)nParticles);
         glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-        // ping-pong (actually an even better way is to use pass parity to determine read/write
-        // buffers)
-        glCopyBufferSubData(
-          GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, sizeof(ParticleHandle) * nParticles
-        );
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
       }
 
-      glBindBuffer(GL_SHADER_STORAGE_BUFFER, startIndicesSSBO);
+      glBindBuffer(GL_SHADER_STORAGE_BUFFER, hashIndicesSSBO);
       glClearBufferData(
         GL_SHADER_STORAGE_BUFFER, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, &HASH_TABLE_SIZE
       );
       glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-      startIndicesUpdate.use();
+      hashIndices.use();
       glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
       glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 

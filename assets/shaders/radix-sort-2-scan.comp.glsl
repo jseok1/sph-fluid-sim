@@ -11,7 +11,7 @@ layout(std430, binding = 4) buffer OffsetsBuffer {
 
 shared uint l_histogram[WORKGROUP_SIZE];
 
-uniform uint g_offsets_size;
+uniform uint g_offsets_size;  // maybe avoid full clear and clear inside this shader
 uniform uint offset;
 
 void main() {

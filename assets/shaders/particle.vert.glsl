@@ -117,7 +117,7 @@ void main() {
 
   vec3 velocity = vec3(particle.velocity[0], particle.velocity[1], particle.velocity[2]);
 
-  fHash = vec4(0.25, 0.25, 0.75, 0.5);
+  fHash = vec4(0.25, 0.25, 0.75, 0.1);
   for (int i = 0; i < 1; i++) {
     uint h = hash(position);
     // log[gl_BaseInstance + gl_InstanceID] = h;

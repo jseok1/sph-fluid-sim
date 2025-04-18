@@ -15,8 +15,8 @@ layout(std430, binding = 0) buffer Particles {
   Particle particles[];
 };
 
-layout(std430, binding = 1) buffer g_startIndicesBuffer {
-  uint g_startIndices[];
+layout(std430, binding = 1) buffer HashIndicesBuffer {
+  uint g_hashIndices[];
 };
 
 struct ParticleHandle {
@@ -120,7 +120,7 @@ vec3 acceleration(Particle particle) {
   vec3 acceleration = vec3(0.0);
   for (uint j = 0; j < 27; j++) {
     uint hash = hash(position_pred + neighborhood[j] * smoothingRadius);
-    uint k = g_startIndices[hash];
+    uint k = g_hashIndices[hash];
     while (k < nParticles && g_handles_front[k].hash == hash) {
       Particle neighbor = particles[g_handles_front[k].index];
       vec3 neighbor_position =

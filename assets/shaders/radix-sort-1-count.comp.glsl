@@ -28,9 +28,9 @@ layout(std430, binding = 2) buffer ParticleHandlesFrontBuffer {
   ParticleHandle g_handles_front[];
 };
 
-// layout(std430, binding = 3) buffer ParticleHandlesBackBuffer {
-//   ParticleHandle g_handles_back[];
-// };
+layout(std430, binding = 3) buffer ParticleHandlesBackBuffer {
+  ParticleHandle g_handles_back[];
+};
 
 layout(std430, binding = 4) buffer OffsetsBuffer {
   uint g_histogram[];
@@ -115,8 +115,8 @@ void main() {
 
   // TODO: it's actually more efficient to handle 4 elements per invocation instead of just 1
 
-  // 0. bring into local memory
-  l_handles_front[l_tid] = g_handles_front[g_tid];
+  // 0. bring into local memory (and ping-pong buffers)
+  l_handles_front[l_tid] = (pass & 0x1) == 0 ? g_handles_front[g_tid] : g_handles_back[g_tid];
 
   // 0. compute hash based on predicted position
   if (pass == 0) {
@@ -125,7 +125,7 @@ void main() {
     vec3 position = vec3(particle.position[0], particle.position[1], particle.position[2]);
     vec3 velocity = vec3(particle.velocity[0], particle.velocity[1], particle.velocity[2]);
     handle.hash = hash(position + velocity * lookAhead);
-    handle.hash = WORKGROUP_SIZE * WORKGROUPS - g_tid;
+    // handle.hash = WORKGROUP_SIZE * WORKGROUPS - g_tid;
     l_handles_front[l_tid] = handle;
   }
 
@@ -161,5 +161,9 @@ void main() {
   }
 
   // 4. copy locally sorted values to global memory
-  g_handles_front[g_tid] = l_handles_front[l_tid];
+  if ((pass & 0x1) == 0) {
+    g_handles_front[g_tid] = l_handles_front[l_tid];
+  } else {
+    g_handles_back[g_tid] = l_handles_front[l_tid];
+  }
 }
