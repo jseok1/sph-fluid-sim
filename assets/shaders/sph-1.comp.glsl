@@ -28,40 +28,40 @@ layout(std430, binding = 2) buffer ParticleHandlesFrontBuffer {
   ParticleHandle g_handles_front[];
 };
 
-layout(std430, binding = 5) buffer LogBuffer {
-  uint log[];
-};
+// layout(std430, binding = 5) buffer LogBuffer {
+//   uint log[];
+// };
 
 // clang-format off
-  vec3 neighborhood[27] = {
-    vec3( 0.0,  0.0,  0.0),
-    vec3(-1.0, -1.0, -1.0),
-    vec3(-1.0, -1.0,  0.0),
-    vec3(-1.0, -1.0,  1.0),
-    vec3(-1.0,  0.0, -1.0),
-    vec3(-1.0,  0.0,  0.0),
-    vec3(-1.0,  0.0,  1.0),
-    vec3(-1.0,  1.0, -1.0),
-    vec3(-1.0,  1.0,  0.0),
-    vec3(-1.0,  1.0,  1.0),
-    vec3( 0.0, -1.0, -1.0),
-    vec3( 0.0, -1.0,  0.0),
-    vec3( 0.0, -1.0,  1.0),
-    vec3( 0.0,  0.0, -1.0),
-    vec3( 0.0,  0.0,  1.0),
-    vec3( 0.0,  1.0, -1.0),
-    vec3( 0.0,  1.0,  0.0),
-    vec3( 0.0,  1.0,  1.0),
-    vec3( 1.0, -1.0, -1.0),
-    vec3( 1.0, -1.0,  0.0),
-    vec3( 1.0, -1.0,  1.0),
-    vec3( 1.0,  0.0, -1.0),
-    vec3( 1.0,  0.0,  0.0),
-    vec3( 1.0,  0.0,  1.0),
-    vec3( 1.0,  1.0, -1.0),
-    vec3( 1.0,  1.0,  0.0),
-    vec3( 1.0,  1.0,  1.0),
-  };
+vec3 neighborhood[27] = {
+  vec3(-1.0, -1.0, -1.0),
+  vec3(-1.0, -1.0,  0.0),
+  vec3(-1.0, -1.0,  1.0),
+  vec3(-1.0,  0.0, -1.0),
+  vec3(-1.0,  0.0,  0.0),
+  vec3(-1.0,  0.0,  1.0),
+  vec3(-1.0,  1.0, -1.0),
+  vec3(-1.0,  1.0,  0.0),
+  vec3(-1.0,  1.0,  1.0),
+  vec3( 0.0, -1.0, -1.0),
+  vec3( 0.0, -1.0,  0.0),
+  vec3( 0.0, -1.0,  1.0),
+  vec3( 0.0,  0.0, -1.0),
+  vec3( 0.0,  0.0,  0.0),
+  vec3( 0.0,  0.0,  1.0),
+  vec3( 0.0,  1.0, -1.0),
+  vec3( 0.0,  1.0,  0.0),
+  vec3( 0.0,  1.0,  1.0),
+  vec3( 1.0, -1.0, -1.0),
+  vec3( 1.0, -1.0,  0.0),
+  vec3( 1.0, -1.0,  1.0),
+  vec3( 1.0,  0.0, -1.0),
+  vec3( 1.0,  0.0,  0.0),
+  vec3( 1.0,  0.0,  1.0),
+  vec3( 1.0,  1.0, -1.0),
+  vec3( 1.0,  1.0,  0.0),
+  vec3( 1.0,  1.0,  1.0),
+};
 // clang-format on
 
 uniform uint nParticles;
@@ -72,7 +72,7 @@ uniform float lookAhead;
 // TODO: make uniforms
 const float pi = 3.1415926535;
 const float restDensity = 0.0;
-const float gas = 8.31 * 0.5;
+const float gas = 8.31;
 
 uint hash(vec3 position) {
   uint hash = uint(mod(
@@ -97,12 +97,9 @@ float density(Particle particle) {
 
   vec3 position_pred = position + velocity * lookAhead;
 
-  // log[gl_GlobalInvocationID.x] = 0;
-
   float density = 0.0;
-  for (uint j = 0; j < 1; j++) {
+  for (uint j = 0; j < 27; j++) {
     uint hash = hash(position_pred + neighborhood[j] * smoothingRadius);
-    // log[gl_GlobalInvocationID.x] = hash;
     uint k = g_hashIndices[hash];
     while (k < nParticles && g_handles_front[k].hash == hash) {
       Particle neighbor = particles[g_handles_front[k].index];
@@ -113,10 +110,8 @@ float density(Particle particle) {
 
       vec3 neighbor_position_pred = neighbor_position + neighbor_velocity * lookAhead;
 
-      // why are some 0?
       density += neighbor.mass * poly6(position_pred, neighbor_position_pred);
 
-      // log[gl_GlobalInvocationID.x]++;
       k++;
     }
   }
@@ -142,3 +137,5 @@ void main() {
 
   particles[g_tid] = particle;
 }
+
+// what if the predicted position goes out of bounds?

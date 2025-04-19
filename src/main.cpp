@@ -27,6 +27,7 @@ int height = 1080;
 const float near = 0.01f;
 const float far = 100.0f;
 const bool throttle = true;
+const bool fullscreen = false;
 
 const float speed = 5.0f;
 const float sensitivity = 0.05f;
@@ -130,16 +131,22 @@ int main() {
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  glfwWindowHint(GLFW_SAMPLES, 4);
 
 #ifdef __APPLE__
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-  GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-  const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-  width = mode->width;
-  height = mode->height;
-  GLFWwindow* window = glfwCreateWindow(width, height, "🌊🌊🌊", monitor, nullptr);
+  GLFWwindow* window;
+  if (fullscreen) {
+    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+    width = mode->width;
+    height = mode->height;
+    window = glfwCreateWindow(width, height, "🌊🌊🌊", monitor, nullptr);
+  } else {
+    window = glfwCreateWindow(width, height, "🌊🌊🌊", nullptr, nullptr);
+  }
   if (!window) {
     return 1;
   }
@@ -189,24 +196,14 @@ int main() {
   // glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
   // glEnableVertexAttribArray(1);
   // glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
-  RenderShader particleShader;
-  RenderShader tankShader;
+  RenderShader particleShader, tankShader;
+  ComputeShader sph1, sph2, radixSortCount, radixSortScan, radixSortScatter, radixSortSwap,
+    hashIndicesClear, hashIndices;
   try {
     particleShader.build(
       "./assets/shaders/particle.vert.glsl", "./assets/shaders/particle.frag.glsl"
     );
     tankShader.build("./assets/shaders/tank.vert.glsl", "./assets/shaders/tank.frag.glsl");
-  } catch (const std::exception& err) {
-    std::cerr << err.what();
-    return 1;
-  }
-
-  // move all particle init to GPU
-
-  // TODO: wrap everything in the try-catch
-  ComputeShader sph1, sph2, radixSortCount, radixSortScan, radixSortScatter, radixSortSwap,
-    hashIndicesClear, hashIndices;
-  try {
     sph1.build("./assets/shaders/sph-1.comp.glsl");
     sph2.build("./assets/shaders/sph-2.comp.glsl");
     radixSortCount.build("./assets/shaders/radix-sort-1-count.comp.glsl");
@@ -218,14 +215,18 @@ int main() {
     return 1;
   }
 
+  // move all particle init to GPU
+
+  // TODO: wrap everything in the try-catch
+
   Model particle{"./assets/models/particle.obj", NormalType::__VERT_NORMAL};
   Texture densityGradient{"./assets/textures/density-gradient.png"};
   densityGradient.use(0);
 
   // particles (dims should be a multiple of two)
-  const int fluidX = 64;
+  const int fluidX = 16;
   const int fluidY = 32;
-  const int fluidZ = 64;
+  const int fluidZ = 16;
   const unsigned int nParticles = fluidX * fluidY * fluidZ;
   static_assert(nParticles % WORKGROUP_SIZE == 0);
   static_assert(WORKGROUP_SIZE >= RADIX);
@@ -347,14 +348,14 @@ int main() {
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, histogramSSBO);
   glClearBufferData(GL_SHADER_STORAGE_BUFFER, GL_R32F, GL_RED, GL_FLOAT, nullptr);
 
-  unsigned int logSSBO;
-  glGenBuffers(1, &logSSBO);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, logSSBO);
-  glBufferData(
-    GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * 6 * nParticles, nullptr, GL_DYNAMIC_DRAW
-  );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, logSSBO);
-  glClearBufferData(GL_SHADER_STORAGE_BUFFER, GL_R32F, GL_RED, GL_FLOAT, nullptr);
+  // unsigned int logSSBO;
+  // glGenBuffers(1, &logSSBO);
+  // glBindBuffer(GL_SHADER_STORAGE_BUFFER, logSSBO);
+  // glBufferData(
+  //   GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * nParticles, nullptr, GL_DYNAMIC_DRAW
+  // );
+  // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, logSSBO);
+  // glClearBufferData(GL_SHADER_STORAGE_BUFFER, GL_R32F, GL_RED, GL_FLOAT, nullptr);
 
   // DEMO PARALLEL
 

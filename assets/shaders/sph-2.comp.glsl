@@ -28,9 +28,15 @@ layout(std430, binding = 2) buffer ParticleHandlesFrontBuffer {
   ParticleHandle g_handles_front[];
 };
 
-layout(std430, binding = 5) buffer LogBuffer {
-  uint log[];
-};
+// struct LogObject {
+//   float x;
+//   float y;
+//   float z;
+// };
+
+// layout(std430, binding = 5) buffer LogBuffer {
+//   LogObject log[];
+// };
 
 uniform float deltaTime;
 uniform uint nParticles;
@@ -43,8 +49,8 @@ uniform float tankHeight;
 uniform float time;
 
 const float pi = 3.1415926535;
-const float gravity = 9.81 * 0.0;
-const float viscosity = 0.0005;  // 0.001 mass, 0.0 rest density, 0.01 - 0.05 play around
+const float gravity = 9.81;
+const float viscosity = 0.01;  // 0.001 mass, 0.0 rest density, 0.01 - 0.05 play around
 
 // clang-format off
 vec3 neighborhood[27] = {
@@ -115,8 +121,6 @@ vec3 acceleration(Particle particle) {
 
   vec3 position_pred = position + velocity * lookAhead;
 
-  log[gl_GlobalInvocationID.x] = 0;
-
   vec3 acceleration = vec3(0.0);
   for (uint j = 0; j < 27; j++) {
     uint hash = hash(position_pred + neighborhood[j] * smoothingRadius);
@@ -130,15 +134,21 @@ vec3 acceleration(Particle particle) {
 
       vec3 neighbor_position_pred = neighbor_position + neighbor_velocity * lookAhead;
 
+      // TODO: THIS CONDITION g_handles_front[k].index != gl_GlobalInvocationID.x IS VERY IMPORTANT -> WHY?
+
       /** acceleration due to pressure */
-      acceleration -= neighbor.volume * (particle.pressure + neighbor.pressure) /
-                      (2.0 * particle.density) * grad_spiky(position_pred, neighbor_position_pred);
+      acceleration -= g_handles_front[k].index != gl_GlobalInvocationID.x
+                        ? neighbor.volume * (particle.pressure + neighbor.pressure) /
+                            (2.0 * particle.density) *
+                            grad_spiky(position_pred, neighbor_position_pred)
+                        : vec3(0.0);
 
       /** acceleration due to viscosity */
-      acceleration += viscosity * neighbor.volume * (neighbor_velocity - velocity) /
-                      particle.density * lap_vis(position_pred, neighbor_position_pred);
+      acceleration += g_handles_front[k].index != gl_GlobalInvocationID.x
+                        ? viscosity * neighbor.volume * (neighbor_velocity - velocity) /
+                            particle.density * lap_vis(position_pred, neighbor_position_pred)
+                        : vec3(0.0);
 
-      log[gl_GlobalInvocationID.x]++;
       k++;
     }
   }
@@ -156,7 +166,7 @@ void main() {
   vec3 position = vec3(particle.position[0], particle.position[1], particle.position[2]);
   vec3 velocity = vec3(particle.velocity[0], particle.velocity[1], particle.velocity[2]);
 
-  // velocity += acceleration(particle) * deltaTime;
+  velocity += acceleration(particle) * deltaTime;
   position += velocity * deltaTime;
 
   // maybe velocity should be reflected via the surface normal of the wall

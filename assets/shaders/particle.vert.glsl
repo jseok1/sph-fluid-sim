@@ -3,7 +3,7 @@
 struct Particle {
   float mass;
   float density;
-  float volume;
+  float volume;  // technically not worth storing; maybe replace with hash?
   float pressure;
   float position[3];
   float velocity[3];
@@ -11,10 +11,6 @@ struct Particle {
 
 layout(std430, binding = 0) buffer Particles {
   Particle particles[];
-};
-
-layout(std430, binding = 1) buffer Hashes {
-  uint offsets[];
 };
 
 layout(location = 0) in vec3 aPos;
@@ -34,7 +30,6 @@ const float pi = 3.1415926535;
 
 // clang-format off
 vec3 neighborhood[27] = {
-  vec3( 0.0,  0.0,  0.0),
   vec3(-1.0, -1.0, -1.0),
   vec3(-1.0, -1.0,  0.0),
   vec3(-1.0, -1.0,  1.0),
@@ -48,6 +43,7 @@ vec3 neighborhood[27] = {
   vec3( 0.0, -1.0,  0.0),
   vec3( 0.0, -1.0,  1.0),
   vec3( 0.0,  0.0, -1.0),
+  vec3( 0.0,  0.0,  0.0),
   vec3( 0.0,  0.0,  1.0),
   vec3( 0.0,  1.0, -1.0),
   vec3( 0.0,  1.0,  0.0),
@@ -77,7 +73,6 @@ uint hash(vec3 position) {
       (uint(floor((position.z + 15.0) / smoothingRadius)) * 83492791),
     HASH_TABLE_SIZE
   ));
-
   return hash;
 }
 
@@ -88,7 +83,9 @@ void main() {
 
   vec3 position = vec3(particle.position[0], particle.position[1], particle.position[2]);
 
-  // TODO: scaling transformation should be done with transform class in C++
+  // TODO: scaling transformation should be done with transform class in C++ (model matrix should
+  // be passed in as a uniform, then modified with translation - could do directly by simply adding
+  // to position vector)
   // clang-format off
   mat4 model = mat4(
           0.05,        0.0,        0.0, 0.0,
@@ -117,12 +114,23 @@ void main() {
 
   vec3 velocity = vec3(particle.velocity[0], particle.velocity[1], particle.velocity[2]);
 
-  fHash = vec4(0.25, 0.25, 0.75, 0.1);
-  for (int i = 0; i < 1; i++) {
-    uint h = hash(position);
-    // log[gl_BaseInstance + gl_InstanceID] = h;
-    if (h == hash(vec3(1.0) + neighborhood[i] * smoothingRadius)) {
-      fHash = vec4(0.75, 0.25, 0.25, 1.0);
+  uint TRACK = 50;
+
+  fHash = vec4(0.25, 0.25, 0.75, 0.2);
+  uint h = hash(position);
+  for (int i = 0; i < 27; i++) {
+    if (h ==
+        hash(
+          vec3(
+            particles[TRACK].position[0], particles[TRACK].position[1], particles[TRACK].position[2]
+          ) +
+          neighborhood[i] * smoothingRadius
+        )) {
+      fHash = vec4(0.75, 0.25, 0.25, 0.5);
     }
+  }
+
+  if (g_tid == TRACK) {
+    fHash = vec4(0.33, 1.0, 0.20, 1.0);
   }
 }
