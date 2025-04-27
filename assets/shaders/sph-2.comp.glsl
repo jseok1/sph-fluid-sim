@@ -12,7 +12,7 @@ struct Particle {
 };
 
 layout(std430, binding = 0) buffer Particles {
-  Particle particles[];
+  Particle g_particles[];
 };
 
 layout(std430, binding = 1) buffer HashIndicesBuffer {
@@ -50,7 +50,7 @@ uniform float time;
 
 const float pi = 3.1415926535;
 const float gravity = 9.81;
-const float viscosity = 0.01;  // 0.001 mass, 0.0 rest density, 0.01 - 0.05 play around
+const float viscosity = 0.005;  // 0.001 mass, 0.0 rest density, 0.01 - 0.05 play around
 
 // clang-format off
 vec3 neighborhood[27] = {
@@ -126,7 +126,7 @@ vec3 acceleration(Particle particle) {
     uint hash = hash(position_pred + neighborhood[j] * smoothingRadius);
     uint k = g_hashIndices[hash];
     while (k < nParticles && g_handles_front[k].hash == hash) {
-      Particle neighbor = particles[g_handles_front[k].index];
+      Particle neighbor = g_particles[g_handles_front[k].index];
       vec3 neighbor_position =
         vec3(neighbor.position[0], neighbor.position[1], neighbor.position[2]);
       vec3 neighbor_velocity =
@@ -134,7 +134,8 @@ vec3 acceleration(Particle particle) {
 
       vec3 neighbor_position_pred = neighbor_position + neighbor_velocity * lookAhead;
 
-      // TODO: THIS CONDITION g_handles_front[k].index != gl_GlobalInvocationID.x IS VERY IMPORTANT -> WHY?
+      // TODO: THIS CONDITION g_handles_front[k].index != gl_GlobalInvocationID.x IS VERY IMPORTANT
+      // -> WHY?
 
       /** acceleration due to pressure */
       acceleration -= g_handles_front[k].index != gl_GlobalInvocationID.x
@@ -161,7 +162,7 @@ vec3 acceleration(Particle particle) {
 
 void main() {
   uint g_tid = gl_GlobalInvocationID.x;
-  Particle particle = particles[g_tid];
+  Particle particle = g_particles[g_tid];
 
   vec3 position = vec3(particle.position[0], particle.position[1], particle.position[2]);
   vec3 velocity = vec3(particle.velocity[0], particle.velocity[1], particle.velocity[2]);
@@ -184,5 +185,5 @@ void main() {
   particle.velocity[1] = velocity.y;
   particle.velocity[2] = velocity.z;
 
-  particles[g_tid] = particle;
+  g_particles[g_tid] = particle;
 }

@@ -12,7 +12,7 @@ struct Particle {
 };
 
 layout(std430, binding = 0) buffer Particles {
-  Particle particles[];
+  Particle g_particles[];
 };
 
 layout(std430, binding = 1) buffer HashIndicesBuffer {
@@ -72,7 +72,7 @@ uniform float lookAhead;
 // TODO: make uniforms
 const float pi = 3.1415926535;
 const float restDensity = 0.0;
-const float gas = 8.31;
+const float gas = 8.31 * 2.0;
 
 uint hash(vec3 position) {
   uint hash = uint(mod(
@@ -90,7 +90,6 @@ float poly6(vec3 origin, vec3 position) {
   return 315.0 * b * b * b / (64.0 * pi * pow(smoothingRadius, 9));
 }
 
-// TODO: remove particles[i] --> fetches into global memory are SLOW
 float density(Particle particle) {
   vec3 position = vec3(particle.position[0], particle.position[1], particle.position[2]);
   vec3 velocity = vec3(particle.velocity[0], particle.velocity[1], particle.velocity[2]);
@@ -102,7 +101,7 @@ float density(Particle particle) {
     uint hash = hash(position_pred + neighborhood[j] * smoothingRadius);
     uint k = g_hashIndices[hash];
     while (k < nParticles && g_handles_front[k].hash == hash) {
-      Particle neighbor = particles[g_handles_front[k].index];
+      Particle neighbor = g_particles[g_handles_front[k].index];
       vec3 neighbor_position =
         vec3(neighbor.position[0], neighbor.position[1], neighbor.position[2]);
       vec3 neighbor_velocity =
@@ -129,13 +128,13 @@ float pressure(Particle particle) {
 
 void main() {
   uint g_tid = gl_GlobalInvocationID.x;
-  Particle particle = particles[g_tid];
+  Particle particle = g_particles[g_tid];
 
   particle.density = density(particle);
   particle.volume = volume(particle);
   particle.pressure = pressure(particle);
 
-  particles[g_tid] = particle;
+  g_particles[g_tid] = particle;
 }
 
 // what if the predicted position goes out of bounds?

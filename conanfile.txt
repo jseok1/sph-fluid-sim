@@ -4,6 +4,7 @@ glad/0.1.36
 glfw/3.4
 glm/cci.20230113
 stb/cci.20230920
+tracy/0.11.1
 
 [generators]
 CMakeDeps

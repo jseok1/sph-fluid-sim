@@ -37,7 +37,7 @@ layout(std430, binding = 4) buffer OffsetsBuffer {
 };
 
 shared uint false_total;
-shared ParticleHandle l_handles_front[WORKGROUP_SIZE];
+shared ParticleHandle l_handles[WORKGROUP_SIZE];
 shared uint l_histogram[RADIX];
 shared uint l_offsets_bitwise[RADIX];
 
@@ -103,7 +103,7 @@ void split(uint l_tid, ParticleHandle handle, uint bit) {
     bit == 1 ? l_offsets_bitwise[l_tid] + false_total : l_tid - l_offsets_bitwise[l_tid];
   barrier();
 
-  l_handles_front[l_offset] = handle;
+  l_handles[l_offset] = handle;
   barrier();
 }
 
@@ -115,23 +115,23 @@ void main() {
 
   // TODO: it's actually more efficient to handle 4 elements per invocation instead of just 1
 
-  // 0. bring into local memory (and ping-pong buffers)
-  l_handles_front[l_tid] = (pass & 0x1) == 0 ? g_handles_front[g_tid] : g_handles_back[g_tid];
+  // 0. copy into local memory (and ping-pong buffers)
+  l_handles[l_tid] = (pass & 0x1) == 0 ? g_handles_front[g_tid] : g_handles_back[g_tid];
 
   // 0. compute hash based on predicted position
-  if (pass == 0) {
-    ParticleHandle handle = l_handles_front[l_tid];
-    Particle particle = g_particles[handle.index];
-    vec3 position = vec3(particle.position[0], particle.position[1], particle.position[2]);
-    vec3 velocity = vec3(particle.velocity[0], particle.velocity[1], particle.velocity[2]);
-    handle.hash = hash(position + velocity * lookAhead);
-    // handle.hash = WORKGROUP_SIZE * WORKGROUPS - g_tid;
-    l_handles_front[l_tid] = handle;
-  }
+  // if (pass == 0) {
+  //   ParticleHandle handle = l_handles[l_tid];
+  //   Particle particle = g_particles[handle.index];
+  //   vec3 position = vec3(particle.position[0], particle.position[1], particle.position[2]);
+  //   vec3 velocity = vec3(particle.velocity[0], particle.velocity[1], particle.velocity[2]);
+  //   handle.hash = hash(position + velocity * lookAhead);
+  //   // handle.hash = WORKGROUP_SIZE * WORKGROUPS - g_tid;
+  //   l_handles[l_tid] = handle;
+  // }
 
   // 1. local radix sort on digit
   for (uint i = 0; i < RADIX_SIZE; i++) {
-    ParticleHandle handle = l_handles_front[l_tid];
+    ParticleHandle handle = l_handles[l_tid];
 
     uint key = handle.hash;
     uint bit = (key >> RADIX_SIZE * pass + i) & 0x1;
@@ -149,7 +149,7 @@ void main() {
   }
   barrier();
 
-  uint key = l_handles_front[l_tid].hash;
+  uint key = l_handles[l_tid].hash;
   uint digit = (key >> RADIX_SIZE * pass) & 0xFF;
 
   atomicAdd(l_histogram[digit], 1);
@@ -162,8 +162,8 @@ void main() {
 
   // 4. copy locally sorted values to global memory
   if ((pass & 0x1) == 0) {
-    g_handles_front[g_tid] = l_handles_front[l_tid];
+    g_handles_front[g_tid] = l_handles[l_tid];
   } else {
-    g_handles_back[g_tid] = l_handles_front[l_tid];
+    g_handles_back[g_tid] = l_handles[l_tid];
   }
 }

@@ -6,12 +6,10 @@
 #include <GLFW/glfw3.h>
 // clang-format on
 
-#include <array>
 #include <cassert>
 #include <cmath>
+#include <format>
 #include <iostream>
-#include <numeric>
-#include <random>
 #include <vector>
 
 #include "Camera.hpp"
@@ -20,6 +18,9 @@
 #include "Model.hpp"
 #include "RenderShader.hpp"
 #include "Texture.hpp"
+#include "tracy/Tracy.hpp"
+
+#define TRACY_ON_DEMAND
 
 const float fovy = 45.0f;
 int width = 1920;  // bad being overwritten
@@ -27,7 +28,7 @@ int height = 1080;
 const float near = 0.01f;
 const float far = 100.0f;
 const bool throttle = true;
-const bool fullscreen = false;
+const bool fullscreen = true;
 
 const float speed = 5.0f;
 const float sensitivity = 0.05f;
@@ -175,6 +176,8 @@ int main() {
   state.camera.translateTo(glm::vec3(0.0, 0.0, 10.0));
   state.camera.rotateTo(glm::vec2(0.0, -90.0));
 
+  // TODO: MASS SHOULD BE A UNIFORM, GET RID OF VOLUME (JUST KEEP PRESSURE, POSITION, VELOCITY)
+
   // // make quad
   // unsigned int quadVAO = 0;
   // unsigned int quadVBO;
@@ -197,8 +200,8 @@ int main() {
   // glEnableVertexAttribArray(1);
   // glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
   RenderShader particleShader, tankShader;
-  ComputeShader sph1, sph2, radixSortCount, radixSortScan, radixSortScatter, radixSortSwap,
-    hashIndicesClear, hashIndices;
+  ComputeShader sph1, sph2, radixSortHash, radixSortCount, radixSortScan, radixSortScatter,
+    radixSortSwap, hashIndicesClear, hashIndices, sortParticles1, sortParticles2;
   try {
     particleShader.build(
       "./assets/shaders/particle.vert.glsl", "./assets/shaders/particle.frag.glsl"
@@ -206,10 +209,13 @@ int main() {
     tankShader.build("./assets/shaders/tank.vert.glsl", "./assets/shaders/tank.frag.glsl");
     sph1.build("./assets/shaders/sph-1.comp.glsl");
     sph2.build("./assets/shaders/sph-2.comp.glsl");
+    radixSortHash.build("./assets/shaders/radix-sort-0-hash.comp.glsl");
     radixSortCount.build("./assets/shaders/radix-sort-1-count.comp.glsl");
     radixSortScan.build("./assets/shaders/radix-sort-2-scan.comp.glsl");
     radixSortScatter.build("./assets/shaders/radix-sort-3-scatter.comp.glsl");
     hashIndices.build("./assets/shaders/hash-indices.comp.glsl");
+    sortParticles1.build("./assets/shaders/sort-particles-1.comp.glsl");
+    sortParticles2.build("./assets/shaders/sort-particles-2.comp.glsl");
   } catch (const std::exception& err) {
     std::cerr << err.what();
     return 1;
@@ -224,9 +230,9 @@ int main() {
   densityGradient.use(0);
 
   // particles (dims should be a multiple of two)
-  const int fluidX = 16;
+  const int fluidX = 64;
   const int fluidY = 32;
-  const int fluidZ = 16;
+  const int fluidZ = 32;
   const unsigned int nParticles = fluidX * fluidY * fluidZ;
   static_assert(nParticles % WORKGROUP_SIZE == 0);
   static_assert(WORKGROUP_SIZE >= RADIX);
@@ -244,8 +250,14 @@ int main() {
   );
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particlesSSBO);
 
+  unsigned int particlesBackSSBO;
+  glGenBuffers(1, &particlesBackSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, particlesBackSSBO);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(Particle) * nParticles, nullptr, GL_DYNAMIC_DRAW);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, particlesBackSSBO);
+
   // hashes
-  const unsigned int HASH_TABLE_SIZE = WORKGROUP_SIZE * 256;
+  const unsigned int HASH_TABLE_SIZE = WORKGROUP_SIZE * 4096;
   unsigned int hashIndicesSSBO;
   glGenBuffers(1, &hashIndicesSSBO);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, hashIndicesSSBO);
@@ -255,8 +267,10 @@ int main() {
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, hashIndicesSSBO);
 
   // param
-  float smoothingRadius = 0.5f;
-  float lookAhead = 1.0f / 144.0f;
+  float smoothingRadius = 0.2f;
+  float lookAhead =
+    4.0f /
+    144.0f;  // this is somehow tied to smoothing radius (smaller radius needs bigger lookahead)
 
   // box
   float tankLength = 5.0f;
@@ -312,7 +326,6 @@ int main() {
 
   // DEMO PARALLEL
   std::vector<ParticleHandle> front(nParticles);
-  std::vector<ParticleHandle> back(nParticles);
 
   for (int i = 0; i < nParticles; i++) {
     front[i].index = i;
@@ -330,7 +343,7 @@ int main() {
   glGenBuffers(1, &backSSBO);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, backSSBO);
   glBufferData(
-    GL_SHADER_STORAGE_BUFFER, sizeof(ParticleHandle) * back.size(), back.data(), GL_DYNAMIC_DRAW
+    GL_SHADER_STORAGE_BUFFER, sizeof(ParticleHandle) * nParticles, nullptr, GL_DYNAMIC_DRAW
   );
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, backSSBO);
 
@@ -375,6 +388,8 @@ int main() {
   float prevTime = glfwGetTime();
   float accumulatedTime = 0.0f;
 
+  unsigned int rename_this = 0;
+
   while (!glfwWindowShouldClose(window)) {
     auto origin = state.camera.origin();
     auto [u, v, w] = state.camera.basis();
@@ -393,77 +408,139 @@ int main() {
       if (state.isMovingUpward) delta += v * speed * deltaTime;
       state.camera.translateBy(delta);
 
-      // sorting
-      // -------
-      // 8-bit per pass → 4 passes for 32-bit keys (technically can be hash size)
-      for (unsigned int pass = 0; pass < 4; pass++) {
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, histogramSSBO);
-        glClearBufferData(GL_SHADER_STORAGE_BUFFER, GL_R32F, GL_RED, GL_FLOAT, nullptr);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-        radixSortCount.use();
-        radixSortCount.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
-        radixSortCount.uniform("smoothingRadius", smoothingRadius);
-        radixSortCount.uniform("lookAhead", lookAhead);
-        radixSortCount.uniform("pass", pass);
-        glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-        radixSortScan.use();
-        curr_n = ceil(static_cast<float>(nParticles) / WORKGROUP_SIZE) * RADIX;
-        unsigned int offset = 0;
-        while (curr_n > 1) {
-          radixSortScan.uniform("offset", (unsigned int)offset);
-          radixSortScan.uniform("g_offsets_size", (unsigned int)total_n);
-          offset += ceil(static_cast<float>(curr_n) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
-
-          glDispatchCompute((unsigned int)ceil(static_cast<float>(curr_n) / WORKGROUP_SIZE), 1, 1);
+      {
+        ZoneScopedN("PART_SORT");
+        if (rename_this == 1) {
+          // sort particles (helps coalesce reads/writes into GPU memory)
+          // ------------------------------------------------------------
+          sortParticles1.use();
+          glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
           glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-          curr_n /= WORKGROUP_SIZE;
-        }
+          sortParticles2.use();
+          glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
+          glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-        radixSortScatter.use();
-        radixSortScatter.uniform("pass", pass);
-        radixSortScatter.uniform("nParticles", (unsigned int)nParticles);
+          rename_this = 0;
+        }
+        rename_this++;
+      }
+
+      {
+        ZoneScopedN("(HASH)");
+        radixSortHash.use();
+        radixSortHash.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
+        radixSortHash.uniform("smoothingRadius", smoothingRadius);
+        radixSortHash.uniform("lookAhead", lookAhead);
         glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
       }
 
-      glBindBuffer(GL_SHADER_STORAGE_BUFFER, hashIndicesSSBO);
-      glClearBufferData(
-        GL_SHADER_STORAGE_BUFFER, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, &HASH_TABLE_SIZE
-      );
-      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+      {
+        ZoneScopedN("RADIX_SORT");
 
-      hashIndices.use();
-      glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
-      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        // sorting particle handles
+        // ------------------------
+        // 8-bit per pass → 4 passes for 32-bit keys (technically can be hash size)
+        for (unsigned int pass = 0; pass < 4; pass++) {
+          glBindBuffer(GL_SHADER_STORAGE_BUFFER, histogramSSBO);
+          glClearBufferData(GL_SHADER_STORAGE_BUFFER, GL_R32F, GL_RED, GL_FLOAT, nullptr);
+          glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+          {
+            ZoneScopedN("(COUNT)");
+            radixSortCount.use();
+            radixSortCount.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
+            radixSortCount.uniform("smoothingRadius", smoothingRadius);
+            radixSortCount.uniform("lookAhead", lookAhead);
+            radixSortCount.uniform("pass", pass);
+            glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+          }
+
+          {
+            ZoneScopedN("(SCAN)");
+            radixSortScan.use();
+            curr_n = ceil(static_cast<float>(nParticles) / WORKGROUP_SIZE) * RADIX;
+            unsigned int offset = 0;
+            while (curr_n > 1) {
+              radixSortScan.uniform("offset", (unsigned int)offset);
+              radixSortScan.uniform("g_offsets_size", (unsigned int)total_n);
+              offset += ceil(static_cast<float>(curr_n) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
+
+              glDispatchCompute(
+                (unsigned int)ceil(static_cast<float>(curr_n) / WORKGROUP_SIZE), 1, 1
+              );
+              glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+              curr_n /= WORKGROUP_SIZE;
+            }
+          }
+
+          {
+            ZoneScopedN("(SCATTER)");
+            radixSortScatter.use();
+            radixSortScatter.uniform("pass", pass);
+            radixSortScatter.uniform("nParticles", (unsigned int)nParticles);
+            glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+          }
+        }
+      }
+
+      {
+        ZoneScopedN("HASH-INDICES");
+        // maybe clear it to HASH_TABLE_SIZE once, then launch shader for nParticles to write the
+        // stuff if different from previous one to clear
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, hashIndicesSSBO);
+        glClearBufferData(
+          GL_SHADER_STORAGE_BUFFER, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, &HASH_TABLE_SIZE
+        );
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+        hashIndices.use();
+        glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+      }
 
       // physics update
       // --------------
-      sph1.use();
-      sph1.uniform("nParticles", (unsigned int)nParticles);
-      sph1.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
-      sph1.uniform("smoothingRadius", smoothingRadius);
-      sph1.uniform("lookAhead", lookAhead);
-      glDispatchCompute((unsigned int)nParticles / 128, 1, 1);  // TODO make 128 a macro
-      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+      {
+        ZoneScopedN("SPH-1");
+        sph1.use();
+        sph1.uniform("nParticles", (unsigned int)nParticles);
+        sph1.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
+        sph1.uniform("smoothingRadius", smoothingRadius);
+        sph1.uniform("lookAhead", lookAhead);
+        glDispatchCompute((unsigned int)nParticles / 128, 1, 1);  // TODO make 128 a macro
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+      }
 
-      sph2.use();
-      sph2.uniform("deltaTime", deltaTime);
-      sph2.uniform("nParticles", (unsigned int)nParticles);
-      sph2.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
-      sph2.uniform("smoothingRadius", smoothingRadius);
-      sph2.uniform("lookAhead", lookAhead);
-      sph2.uniform("tankLength", tankLength);
-      sph2.uniform("tankHeight", tankHeight);
-      sph2.uniform("tankWidth", tankWidth);
-      sph2.uniform("time", currTime);
-      glDispatchCompute((unsigned int)nParticles / 128, 1, 1);
-      glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+      {
+        ZoneScopedN("SPH-2");
+        sph2.use();
+        sph2.uniform("deltaTime", deltaTime);
+        sph2.uniform("nParticles", (unsigned int)nParticles);
+        sph2.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
+        sph2.uniform("smoothingRadius", smoothingRadius);
+        sph2.uniform("lookAhead", lookAhead);
+        sph2.uniform("tankLength", tankLength);
+        sph2.uniform("tankHeight", tankHeight);
+        sph2.uniform("tankWidth", tankWidth);
+        sph2.uniform("time", currTime);
+        glDispatchCompute((unsigned int)nParticles / 128, 1, 1);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+      }
 
       accumulatedTime -= deltaTime;
+
+      break;  // TODO: REMOVE THIS
+
+      // My findings:
+      // RADIX_SORT is ~6-7 ms for 65536 particles when static but ~13-14 ms when moving. Problem is
+      // likely uncoalesced reads/writes.
+      // The best way to solve this might be to sort the particles buffer every few simulation
+      // steps.
     }
 
     glClearColor(0.6f, 0.88f, 1.0f, 1.0f);
@@ -492,6 +569,8 @@ int main() {
 
     glfwSwapBuffers(window);
     glfwPollEvents();
+
+    FrameMark;
   }
 
   glfwTerminate();
