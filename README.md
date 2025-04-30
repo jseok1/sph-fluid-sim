@@ -49,13 +49,74 @@ https://ephyslab.uvigo.es/publica/documents/file_259Dominguez_etal_2010_IJNMF_DO
 "sliding vector, static matrix, linked list"
 CLL vs. Verlet (does CLL mean uniform grid?)
 
+Cell lists are a spatial grid (3D or 2D) that divides space into cells (small cubes/boxes).
+Verlet lists are neighbor lists for each particle.
+
+In SPH, cell lists are the standard, while in molecular dynamics, Verlet lists are the standard.
+Verlet lists take O(N^2) time to construct.
+
+DualSPHysics uses CLL. With CLL, an actual list of neighbors is NOT generated.
+
+
+CLL using compressed neighbor lists. (Most direct competitor is compact hashing)
+Compute cell indices using Morton Codes (bit interleaving).
+Build a compact list -> (cell index [Morton Code], index of first particle in this cell)
+With this approach, you can query the number of particles in a cell by taking the differenec between
+the start indices of adjacent compact lists.
+particle -> marker if different from previous particle -> prefix sum
+-> if marker is 1, write (particle index, cell index) to compact cell array.
+
+Based on the z-order, compute a list of sub-ranges of cells that cover the 3x3x3 neighborhood.
+The min and max cell indices are computed by the BigMin-LitMax algorithm. These indices are then
+found in the compact list via ternery search with fallback to linear search.
+The idea with this algorithm is to compute a compressed neighborhood list for each particle ONCE per
+iteration.
+
+Use a SoA!!!!!!!! Best to combine into vec4s (mass + position), (velocity, density)
+Storing start AND END index is useful for avoiding loops in the neighborhood query. Could also just
+sort particules themselves, not their handles.
+GPUSHP uses a fixed-sized neighbor list with a sentinal value ("neighbor-major").
+https://arxiv.org/pdf/2207.11328
+
+(This talk about the NVIDIA GPU neighbor search. Basically what I have but cross-reference this just in case.)
+https://wickedengine.net/2018/05/scalabe-gpu-fluid-simulation/
+
+int3 cellIndex = floor(particleA.position / h);
+
+for(int i = -1; i <= 1; ++i)
+{
+  for(int j = -1; j <= 1; ++j)
+  {
+    for(int k = -1; k <= 1; ++k)
+    {
+       int3 neighborIndex = cellIndex + int3(i, j, k);
+       uint flatNeighborIndex = GetFlatCellIndex(neighborIndex);
+       
+       // look up the offset to the cell:
+       uint neighborIterator = cellOffsetBuffer[flatNeighborIndex];
+
+       // iterate through particles in the neighbour cell (if iterator offset is valid)
+       while(neighborIterator != 0xFFFFFFFF && neighborIterator < particleCount)
+       {
+         uint particleIndexB = particleIndexBuffer[neighborIterator];
+         if(cellIndexBuffer[particleIndexB] != flatNeighborIndex)
+         {
+           break;  // it means we stepped out of the neighbour cell list!
+         }
+
+         // Here you can load particleB and do the SPH evaluation logic
+
+         neighborIterator++;  // iterate...
+       }
+
+    }
+  }
+}
+
+(Don't do the triple loop or unroll though. Keep using the lookup table.)
 
 SESPH - 
 PCISPH - predicted position and velocity
-
-gridCounters
-gridCells
-parallel radix sort?
 
 https://arxiv.org/abs/2212.07679
 

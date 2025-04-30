@@ -167,7 +167,10 @@ void main() {
   vec3 position = vec3(particle.position[0], particle.position[1], particle.position[2]);
   vec3 velocity = vec3(particle.velocity[0], particle.velocity[1], particle.velocity[2]);
 
+  // 1. update velocity (Euler integration)
   velocity += acceleration(particle) * deltaTime;
+
+  // 2. update position (Euler integration)
   position += velocity * deltaTime;
 
   // maybe velocity should be reflected via the surface normal of the wall

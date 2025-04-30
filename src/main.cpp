@@ -8,7 +8,6 @@
 
 #include <cassert>
 #include <cmath>
-#include <format>
 #include <iostream>
 #include <vector>
 
@@ -126,6 +125,8 @@ void processKey(GLFWwindow* window, int key, int scancode, int action, int mods)
     }
   }
 }
+
+// SoA is better than AoS for coalesced accesses.
 
 int main() {
   glfwInit();
@@ -257,7 +258,7 @@ int main() {
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, particlesBackSSBO);
 
   // hashes
-  const unsigned int HASH_TABLE_SIZE = WORKGROUP_SIZE * 4096;
+  const unsigned int HASH_TABLE_SIZE = WORKGROUP_SIZE * 4096; // 2 * nParticles is recommended (Ihmsen et al.)
   unsigned int hashIndicesSSBO;
   glGenBuffers(1, &hashIndicesSSBO);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, hashIndicesSSBO);
@@ -361,14 +362,14 @@ int main() {
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, histogramSSBO);
   glClearBufferData(GL_SHADER_STORAGE_BUFFER, GL_R32F, GL_RED, GL_FLOAT, nullptr);
 
-  // unsigned int logSSBO;
-  // glGenBuffers(1, &logSSBO);
-  // glBindBuffer(GL_SHADER_STORAGE_BUFFER, logSSBO);
-  // glBufferData(
-  //   GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * nParticles, nullptr, GL_DYNAMIC_DRAW
-  // );
-  // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, logSSBO);
-  // glClearBufferData(GL_SHADER_STORAGE_BUFFER, GL_R32F, GL_RED, GL_FLOAT, nullptr);
+  unsigned int logSSBO;
+  glGenBuffers(1, &logSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, logSSBO);
+  glBufferData(
+    GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * 2 * nParticles, nullptr, GL_DYNAMIC_DRAW
+  );
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, logSSBO);
+  glClearBufferData(GL_SHADER_STORAGE_BUFFER, GL_R32F, GL_RED, GL_FLOAT, nullptr);
 
   // DEMO PARALLEL
 
@@ -410,7 +411,7 @@ int main() {
 
       {
         ZoneScopedN("PART_SORT");
-        if (rename_this == 1) {
+        if (rename_this == 1) { // anywhere between 1-100 time steps is recommended
           // sort particles (helps coalesce reads/writes into GPU memory)
           // ------------------------------------------------------------
           sortParticles1.use();
