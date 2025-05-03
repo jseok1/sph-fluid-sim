@@ -115,8 +115,56 @@ for(int i = -1; i <= 1; ++i)
 
 (Don't do the triple loop or unroll though. Keep using the lookup table.)
 
-SESPH - 
-PCISPH - predicted position and velocity
+
+Amortize the cost of neighbor search by building a neighbor list per particle. Precompute the maximum
+number of neighbors.
+
+cellStart[] is like head[] array for linked list.
+cellIDtoParticleID[]
+
+Things to try:
+1. Use Morton codes for spatial ordering instead of hashing. See if this improves performance.
+   While also sorting particles array every few simulation steps.
+2. Use a SoA format.
+3. See if you can utilize shared memory in more places besides radix sort.
+4. Each thread should handle 4-8 particles.
+5. See if the neighbor loop can be improved.
+6. [FINITE GRID]
+
+Are Morton codes a form of hashing? Hilbert codes are another alternative.
+
+Z-index sort is useful for reordering particles themselves or in a finite domain.
+
+
+SESPH
+for each particle i do
+    compute density
+    compute pressure
+for each particle i do
+    compute forces
+    integrate
+
+
+PCISPH (can use larger time steps, resulting in greater overall efficiency)
+for each particle i do
+    compute forces
+    pressure = 0
+    pressure_force = vec3(0,0,0)
+k = 0
+while (max() > eta or k < 3) do
+    for each particle i do
+        predict velocity
+        predict position
+    for each particle i do
+        update distance to neighbors
+        predict density variation
+        update pressure
+    for each particle i do
+        compute pressure force
+    k++
+for each particle i do
+    integrate
+
 
 https://arxiv.org/abs/2212.07679
 
