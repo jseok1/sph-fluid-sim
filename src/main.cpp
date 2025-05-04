@@ -13,7 +13,6 @@
 
 #include "Camera.hpp"
 #include "ComputeShader.hpp"
-#include "Fluid.hpp"
 #include "Model.hpp"
 #include "RenderShader.hpp"
 #include "Texture.hpp"
@@ -39,6 +38,7 @@ struct State {
   bool isMovingRightward = false;
   bool isMovingUpward = false;
   bool isMovingDownward = false;
+  bool isPaused = true;
 
   Camera camera = Camera(fovy, width, height, near, far);
 } state;
@@ -70,6 +70,10 @@ void processKey(GLFWwindow* window, int key, int scancode, int action, int mods)
     if (key == GLFW_KEY_ESCAPE) {
       glfwSetWindowShouldClose(window, GL_TRUE);
       return;
+    }
+
+    if (key == GLFW_KEY_P) {
+      state.isPaused = !state.isPaused;
     }
 
     if (key == GLFW_KEY_W) {
@@ -175,32 +179,9 @@ int main() {
   state.camera.translateTo(glm::vec3(0.0, 0.0, 10.0));
   state.camera.rotateTo(glm::vec2(0.0, -90.0));
 
-  // TODO: MASS SHOULD BE A UNIFORM, GET RID OF VOLUME (JUST KEEP PRESSURE, POSITION, VELOCITY)
-
-  // // make quad
-  // unsigned int quadVAO = 0;
-  // unsigned int quadVBO;
-  // float quadVertices[] = {
-  //   // clang-format off
-  //   -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
-  //   -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
-  //    1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
-  //    1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
-  //   // clang-format on
-  // };
-  // // setup plane VAO
-  // glGenVertexArrays(1, &quadVAO);
-  // glGenBuffers(1, &quadVBO);
-  // glBindVertexArray(quadVAO);
-  // glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
-  // glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
-  // glEnableVertexAttribArray(0);
-  // glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
-  // glEnableVertexAttribArray(1);
-  // glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
   RenderShader particleShader, tankShader;
   ComputeShader sph1, sph2, radixSortHash, radixSortCount, radixSortScan, radixSortScatter,
-    radixSortSwap, hashIndicesClear, hashIndices, sortParticles1, sortParticles2;
+    radixSortSwap, hashIndicesClear, hashIndices, initParticles;
   try {
     particleShader.build(
       "./assets/shaders/particle.vert.glsl", "./assets/shaders/particle.frag.glsl"
@@ -213,14 +194,13 @@ int main() {
     radixSortScan.build("./assets/shaders/radix-sort-2-scan.comp.glsl");
     radixSortScatter.build("./assets/shaders/radix-sort-3-scatter.comp.glsl");
     hashIndices.build("./assets/shaders/hash-indices.comp.glsl");
-    sortParticles1.build("./assets/shaders/sort-particles-1.comp.glsl");
-    sortParticles2.build("./assets/shaders/sort-particles-2.comp.glsl");
+    initParticles.build("./assets/shaders/init-particles.comp.glsl");
   } catch (const std::exception& err) {
     std::cerr << err.what();
     return 1;
   }
 
-  // move all particle init to GPU
+  // uniforms should all be a static member function of the pipeline class
 
   // TODO: wrap everything in the try-catch
 
@@ -228,34 +208,45 @@ int main() {
   Texture densityGradient{"./assets/textures/density-gradient.png"};
   densityGradient.use(0);
 
-  // particles (dims should be a multiple of two)
-  const int fluidX = 64;
-  const int fluidY = 32;
-  const int fluidZ = 32;
-  const unsigned int nParticles = fluidX * fluidY * fluidZ;
+  const unsigned int nParticles = 64 * 32 * 32;
   static_assert(nParticles % WORKGROUP_SIZE == 0);
   static_assert(WORKGROUP_SIZE >= RADIX);
 
-  Fluid fluid(fluidX, fluidY, fluidZ);
+  float mass = 0.001f;
 
-  unsigned int particlesSSBO;
-  glGenBuffers(1, &particlesSSBO);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, particlesSSBO);
-  glBufferData(
-    GL_SHADER_STORAGE_BUFFER,
-    sizeof(Particle) * fluid.particles.size(),
-    fluid.particles.data(),
-    GL_DYNAMIC_DRAW
-  );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particlesSSBO);
+  // g_positions
+  unsigned int positionsSSBO;
+  glGenBuffers(1, &positionsSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, positionsSSBO);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * 3 * nParticles, nullptr, GL_DYNAMIC_DRAW);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, positionsSSBO);
 
-  unsigned int particlesBackSSBO;
-  glGenBuffers(1, &particlesBackSSBO);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, particlesBackSSBO);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(Particle) * nParticles, nullptr, GL_DYNAMIC_DRAW);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, particlesBackSSBO);
+  // g_velocities
+  unsigned int velocitiesSSBO;
+  glGenBuffers(1, &velocitiesSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, velocitiesSSBO);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * 3 * nParticles, nullptr, GL_DYNAMIC_DRAW);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, velocitiesSSBO);
 
-  // hashes
+  // g_densities
+  unsigned int densitiesSSBO;
+  glGenBuffers(1, &densitiesSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, densitiesSSBO);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * nParticles, nullptr, GL_DYNAMIC_DRAW);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, densitiesSSBO);
+
+  // g_pressures
+  unsigned int pressuresSSBO;
+  glGenBuffers(1, &pressuresSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, pressuresSSBO);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * nParticles, nullptr, GL_DYNAMIC_DRAW);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, pressuresSSBO);
+
+  initParticles.use();
+  initParticles.uniform("nParticles", nParticles);
+  glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
   const unsigned int HASH_TABLE_SIZE =
     WORKGROUP_SIZE * 4096;  // 2 * nParticles is recommended (Ihmsen et al.)
   unsigned int hashIndicesSSBO;
@@ -268,7 +259,7 @@ int main() {
 
   // param
   float smoothingRadius = 0.2f;
-  float lookAhead =
+  float deltaTimePred =
     4.0f /
     144.0f;  // this is somehow tied to smoothing radius (smaller radius needs bigger lookahead)
 
@@ -325,12 +316,19 @@ int main() {
   glBindVertexArray(0);
 
   // DEMO PARALLEL
+  struct ParticleHandle {
+    unsigned int hash;
+    unsigned int index;
+  };
   std::vector<ParticleHandle> front(nParticles);
 
   for (int i = 0; i < nParticles; i++) {
     front[i].index = i;
   }
 
+  // TODO: particle handles should also be SoA?
+
+  // g_handles_front
   unsigned int frontSSBO;
   glGenBuffers(1, &frontSSBO);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, frontSSBO);
@@ -339,6 +337,7 @@ int main() {
   );
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, frontSSBO);
 
+  // g_handles_back
   unsigned int backSSBO;
   glGenBuffers(1, &backSSBO);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, backSSBO);
@@ -354,6 +353,7 @@ int main() {
     curr_n /= WORKGROUP_SIZE;
   }
 
+  // g_histogram
   unsigned int histogramSSBO;
   glGenBuffers(1, &histogramSSBO);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, histogramSSBO);
@@ -365,7 +365,7 @@ int main() {
   glGenBuffers(1, &logSSBO);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, logSSBO);
   glBufferData(
-    GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * 2 * nParticles, nullptr, GL_DYNAMIC_DRAW
+    GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * nParticles, nullptr, GL_DYNAMIC_DRAW
   );
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, logSSBO);
   glClearBufferData(GL_SHADER_STORAGE_BUFFER, GL_R32F, GL_RED, GL_FLOAT, nullptr);
@@ -413,13 +413,6 @@ int main() {
         if (rename_this == 1) {  // anywhere between 1-100 time steps is recommended
           // sort particles (helps coalesce reads/writes into GPU memory)
           // ------------------------------------------------------------
-          sortParticles1.use();
-          glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
-          glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-          sortParticles2.use();
-          glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
-          glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
           rename_this = 0;
         }
@@ -431,7 +424,7 @@ int main() {
         radixSortHash.use();
         radixSortHash.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
         radixSortHash.uniform("smoothingRadius", smoothingRadius);
-        radixSortHash.uniform("lookAhead", lookAhead);
+        radixSortHash.uniform("deltaTimePred", deltaTimePred);
         glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
       }
@@ -441,7 +434,7 @@ int main() {
 
         // sorting particle handles
         // ------------------------
-        // 8-bit per pass → 4 passes for 32-bit keys (technically can be hash size)
+        // 8 bits per pass → 4 passes for 32-bit keys
         for (unsigned int pass = 0; pass < 4; pass++) {
           glBindBuffer(GL_SHADER_STORAGE_BUFFER, histogramSSBO);
           glClearBufferData(GL_SHADER_STORAGE_BUFFER, GL_R32F, GL_RED, GL_FLOAT, nullptr);
@@ -452,7 +445,7 @@ int main() {
             radixSortCount.use();
             radixSortCount.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
             radixSortCount.uniform("smoothingRadius", smoothingRadius);
-            radixSortCount.uniform("lookAhead", lookAhead);
+            radixSortCount.uniform("deltaTimePred", deltaTimePred);
             radixSortCount.uniform("pass", pass);
             glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -505,31 +498,35 @@ int main() {
 
       // physics update
       // --------------
-      {
-        ZoneScopedN("SPH-1");
-        sph1.use();
-        sph1.uniform("nParticles", (unsigned int)nParticles);
-        sph1.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
-        sph1.uniform("smoothingRadius", smoothingRadius);
-        sph1.uniform("lookAhead", lookAhead);
-        glDispatchCompute((unsigned int)nParticles / 128, 1, 1);  // TODO make 128 a macro
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-      }
+      if (!state.isPaused) {
+        {
+          ZoneScopedN("SPH-1");
+          sph1.use();
+          sph1.uniform("deltaTimePred", deltaTimePred);
+          sph1.uniform("nParticles", (unsigned int)nParticles);
+          sph1.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
+          sph1.uniform("mass", mass);
+          sph1.uniform("smoothingRadius", smoothingRadius);
+          glDispatchCompute((unsigned int)nParticles / 128, 1, 1);  // TODO make 128 a macro
+          glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        }
 
-      {
-        ZoneScopedN("SPH-2");
-        sph2.use();
-        sph2.uniform("deltaTime", deltaTime);
-        sph2.uniform("nParticles", (unsigned int)nParticles);
-        sph2.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
-        sph2.uniform("smoothingRadius", smoothingRadius);
-        sph2.uniform("lookAhead", lookAhead);
-        sph2.uniform("tankLength", tankLength);
-        sph2.uniform("tankHeight", tankHeight);
-        sph2.uniform("tankWidth", tankWidth);
-        sph2.uniform("time", currTime);
-        glDispatchCompute((unsigned int)nParticles / 128, 1, 1);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        {
+          ZoneScopedN("SPH-2");
+          sph2.use();
+          sph2.uniform("deltaTime", deltaTime);
+          sph2.uniform("deltaTimePred", deltaTimePred);
+          sph2.uniform("nParticles", (unsigned int)nParticles);
+          sph2.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
+          sph2.uniform("mass", mass);
+          sph2.uniform("smoothingRadius", smoothingRadius);
+          sph2.uniform("tankLength", tankLength);
+          sph2.uniform("tankHeight", tankHeight);
+          sph2.uniform("tankWidth", tankWidth);
+          sph2.uniform("seed", currTime);
+          glDispatchCompute((unsigned int)nParticles / 128, 1, 1);
+          glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        }
       }
 
       accumulatedTime -= deltaTime;
@@ -552,7 +549,7 @@ int main() {
     particleShader.uniform("nParticles", (unsigned int)nParticles);
     particleShader.uniform("smoothingRadius", smoothingRadius);
     particleShader.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
-    particleShader.uniform("lookAhead", lookAhead);
+    particleShader.uniform("deltaTimePred", deltaTimePred);
 
     particle.draw(nParticles);
 

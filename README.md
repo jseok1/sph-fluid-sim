@@ -136,6 +136,11 @@ Are Morton codes a form of hashing? Hilbert codes are another alternative.
 Z-index sort is useful for reordering particles themselves or in a finite domain.
 
 
+SoA should help because more writes can be coalesced together?
+
+
+
+
 SESPH
 for each particle i do
     compute density

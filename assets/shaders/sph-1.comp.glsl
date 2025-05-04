@@ -2,21 +2,24 @@
 
 layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
 
-struct Particle {
-  float mass;
-  float density;
-  float volume;
-  float pressure;
-  float position[3];
-  float velocity[3];
+layout(std430, binding = 0) readonly buffer Positions {
+  float g_positions[];
 };
 
-layout(std430, binding = 0) buffer Particles {
-  Particle g_particles[];
+layout(std430, binding = 7) readonly buffer Velocities {
+  float g_velocities[];
 };
 
-layout(std430, binding = 1) buffer HashIndicesBuffer {
-  uint g_hashIndices[];
+layout(std430, binding = 8) buffer Densities {
+  float g_densities[];
+};
+
+layout(std430, binding = 9) buffer Pressures {
+  float g_pressures[];
+};
+
+layout(std430, binding = 1) readonly buffer CellParticles {
+  uint g_cells[];
 };
 
 struct ParticleHandle {
@@ -24,16 +27,12 @@ struct ParticleHandle {
   uint index;
 };
 
-layout(std430, binding = 2) buffer ParticleHandlesFrontBuffer {
+layout(std430, binding = 2) readonly buffer ParticleHandlesFrontBuffer {
   ParticleHandle g_handles_front[];
 };
 
-// layout(std430, binding = 5) buffer LogBuffer {
-//   uint log[];
-// };
-
-// clang-format off
 vec3 neighborhood[27] = {
+  // clang-format off
   vec3(-1.0, -1.0, -1.0),
   vec3(-1.0, -1.0,  0.0),
   vec3(-1.0, -1.0,  1.0),
@@ -61,30 +60,21 @@ vec3 neighborhood[27] = {
   vec3( 1.0,  1.0, -1.0),
   vec3( 1.0,  1.0,  0.0),
   vec3( 1.0,  1.0,  1.0),
+  // clang-format on
 };
-// clang-format on
 
 uniform uint nParticles;
 uniform uint HASH_TABLE_SIZE;
+uniform float mass;
 uniform float smoothingRadius;
 uniform float lookAhead;
 
 // TODO: make uniforms
 const float pi = 3.1415926535;
-const float restDensity = 0.0;
-const float gas = 8.31 * 2.0;
+const float rest_density = 0.0;
+const float gas = 8.31;
 
-// uint hash(vec3 position) {
-//   uint hash = uint(mod(
-//     (uint(floor((position.x + 15.0) / smoothingRadius)) * 73856093) ^
-//       (uint(floor((position.y + 15.0) / smoothingRadius)) * 19349663) ^
-//       (uint(floor((position.z + 15.0) / smoothingRadius)) * 83492791),
-//     HASH_TABLE_SIZE
-//   ));
-//   return hash;
-// }
-
-uint interleaveBits(uint bits) {
+uint interleave_bits(uint bits) {
   bits &= 0x000003FF;  // keep only 10 bits (3 x 10 bits = 30 bits <= 32 bits)
   bits = (bits | (bits << 16)) & 0x030000FF;  // 00000011 00000000 00000000 11111111
   bits = (bits | (bits << 8))  & 0x0300F00F;  // 00000011 00000000 11110000 00001111
@@ -98,7 +88,7 @@ uint hash(vec3 position) {
   uint x = uint((position.x + 5) / smoothingRadius);
   uint y = uint((position.y + 5) / smoothingRadius);
   uint z = uint((position.z + 5) / smoothingRadius);
-  uint hash = (interleaveBits(z) << 2) | (interleaveBits(y) << 1) | interleaveBits(x);
+  uint hash = (interleave_bits(z) << 2) | (interleave_bits(y) << 1) | interleave_bits(x);
   hash = uint(mod(hash, HASH_TABLE_SIZE));  // better if bitwise &
   return hash;
 }
@@ -109,51 +99,44 @@ float poly6(vec3 origin, vec3 position) {
   return 315.0 * b * b * b / (64.0 * pi * pow(smoothingRadius, 9));
 }
 
-float density(Particle particle) {
-  vec3 position = vec3(particle.position[0], particle.position[1], particle.position[2]);
-  vec3 velocity = vec3(particle.velocity[0], particle.velocity[1], particle.velocity[2]);
+float density_i(vec3 position_i, vec3 velocity_i) {
+  vec3 position_pred_i = position_i + velocity_i * lookAhead;
 
-  vec3 position_pred = position + velocity * lookAhead;
+  float density_i = 0.0;
+  for (uint p = 0; p < 27; p++) {
+    uint hash = hash(position_pred_i + neighborhood[p] * smoothingRadius);
+    uint q = g_cells[hash];
+    while (q < nParticles && g_handles_front[q].hash == hash) {
+      uint j = g_handles_front[q].index;
+      vec3 position_j = vec3(g_positions[3 * j], g_positions[3 * j + 1], g_positions[3 * j + 2]);  // coalesced right?
+      vec3 velocity_j = vec3(g_velocities[3 * j], g_velocities[3 * j + 1], g_velocities[3 * j + 2]);
 
-  float density = 0.0;
-  for (uint j = 0; j < 27; j++) {
-    uint hash = hash(position_pred + neighborhood[j] * smoothingRadius);
-    uint k = g_hashIndices[hash];
-    while (k < nParticles && g_handles_front[k].hash == hash) {
-      Particle neighbor = g_particles[g_handles_front[k].index];
-      vec3 neighbor_position =
-        vec3(neighbor.position[0], neighbor.position[1], neighbor.position[2]);
-      vec3 neighbor_velocity =
-        vec3(neighbor.velocity[0], neighbor.velocity[1], neighbor.velocity[2]);
+      vec3 position_pred_j = position_j + velocity_j * lookAhead;
 
-      vec3 neighbor_position_pred = neighbor_position + neighbor_velocity * lookAhead;
+      density_i += mass * poly6(position_pred_i, position_pred_j);
 
-      density += neighbor.mass * poly6(position_pred, neighbor_position_pred);
-
-      k++;
+      q++;
     }
   }
 
-  return density;
+  return density_i;
 }
 
-float volume(Particle particle) {
-  return particle.mass / particle.density;
-}
-
-float pressure(Particle particle) {
-  return gas * (particle.density - restDensity);
+float pressure(float density_i) {
+  return gas * (density_i - rest_density);
 }
 
 void main() {
   uint g_tid = gl_GlobalInvocationID.x;
-  Particle particle = g_particles[g_tid];
 
-  particle.density = density(particle);
-  particle.volume = volume(particle);
-  particle.pressure = pressure(particle);
+  uint i = g_tid;
+  vec3 position_i = vec3(g_positions[3 * i], g_positions[3 * i + 1], g_positions[3 * i + 2]);
+  vec3 velocity_i = vec3(g_velocities[3 * i], g_velocities[3 * i + 1], g_velocities[3 * i + 2]);
 
-  g_particles[g_tid] = particle;
+  float density_i = density_i(position_i, velocity_i);
+  float pressure_i = pressure(density_i);
+
+  g_densities[i] = density_i;
+  g_pressures[i] = pressure_i;
 }
 
-// what if the predicted position goes out of bounds?

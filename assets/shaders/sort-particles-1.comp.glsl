@@ -4,15 +4,6 @@
 
 layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
-struct Particle {
-  float mass;
-  float density;
-  float volume;
-  float pressure;
-  float position[3];
-  float velocity[3];
-};
-
 struct ParticleHandle {
   uint hash;
   uint index;
