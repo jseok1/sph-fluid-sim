@@ -131,6 +131,9 @@ Things to try:
 5. See if the neighbor loop can be improved.
 6. [FINITE GRID]
 
+IF HASH IS STORED SEPERATELY, WILL THE (HASH) KERNEL RUNTIME BE LESS AND PHYSICS KERNEL RUNTIME BE MORE?
+
+
 Are Morton codes a form of hashing? Hilbert codes are another alternative.
 
 Z-index sort is useful for reordering particles themselves or in a finite domain.

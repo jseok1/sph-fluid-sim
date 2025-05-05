@@ -13,10 +13,10 @@
 
 #include "Camera.hpp"
 #include "ComputeShader.hpp"
-#include "Model.hpp"
 #include "RenderShader.hpp"
 #include "Texture.hpp"
 #include "tracy/Tracy.hpp"
+#include "tracy/TracyOpenGL.hpp"
 
 #define TRACY_ON_DEMAND
 
@@ -172,8 +172,8 @@ int main() {
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_MULTISAMPLE);
   glEnable(GL_CULL_FACE);
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  glEnable(GL_BLEND);
+  // glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  // glEnable(GL_BLEND);
 
   state.camera = Camera(fovy, width, height, near, far);  // bad
   state.camera.translateTo(glm::vec3(0.0, 0.0, 10.0));
@@ -181,7 +181,7 @@ int main() {
 
   RenderShader particleShader, tankShader;
   ComputeShader sph1, sph2, radixSortHash, radixSortCount, radixSortScan, radixSortScatter,
-    radixSortSwap, hashIndicesClear, hashIndices, initParticles;
+    radixSortSwap, hashIndicesClear, hashIndices, initParticles, sortParticles1, sortParticles2;
   try {
     particleShader.build(
       "./assets/shaders/particle.vert.glsl", "./assets/shaders/particle.frag.glsl"
@@ -195,6 +195,8 @@ int main() {
     radixSortScatter.build("./assets/shaders/radix-sort-3-scatter.comp.glsl");
     hashIndices.build("./assets/shaders/hash-indices.comp.glsl");
     initParticles.build("./assets/shaders/init-particles.comp.glsl");
+    sortParticles1.build("./assets/shaders/sort-particles-1.comp.glsl");
+    sortParticles2.build("./assets/shaders/sort-particles-2.comp.glsl");
   } catch (const std::exception& err) {
     std::cerr << err.what();
     return 1;
@@ -204,43 +206,56 @@ int main() {
 
   // TODO: wrap everything in the try-catch
 
-  Model particle{"./assets/models/particle.obj", NormalType::__VERT_NORMAL};
   Texture densityGradient{"./assets/textures/density-gradient.png"};
   densityGradient.use(0);
 
-  const unsigned int nParticles = 64 * 32 * 32;
+  const unsigned int nParticles = 64 * 64 * 64;
   static_assert(nParticles % WORKGROUP_SIZE == 0);
   static_assert(WORKGROUP_SIZE >= RADIX);
 
   float mass = 0.001f;
 
-  // g_positions
-  unsigned int positionsSSBO;
-  glGenBuffers(1, &positionsSSBO);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, positionsSSBO);
+  // g_positions_ping
+  unsigned int positionsSSBOPing;
+  glGenBuffers(1, &positionsSSBOPing);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, positionsSSBOPing);
   glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * 3 * nParticles, nullptr, GL_DYNAMIC_DRAW);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, positionsSSBO);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, positionsSSBOPing);
 
-  // g_velocities
-  unsigned int velocitiesSSBO;
-  glGenBuffers(1, &velocitiesSSBO);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, velocitiesSSBO);
+  // g_velocities_ping
+  unsigned int velocitiesSSBOPing;
+  glGenBuffers(1, &velocitiesSSBOPing);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, velocitiesSSBOPing);
   glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * 3 * nParticles, nullptr, GL_DYNAMIC_DRAW);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, velocitiesSSBO);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, velocitiesSSBOPing);
 
-  // g_densities
-  unsigned int densitiesSSBO;
-  glGenBuffers(1, &densitiesSSBO);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, densitiesSSBO);
+  // g_densities_ping
+  unsigned int densitiesSSBOPing;
+  glGenBuffers(1, &densitiesSSBOPing);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, densitiesSSBOPing);
   glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * nParticles, nullptr, GL_DYNAMIC_DRAW);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, densitiesSSBO);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, densitiesSSBOPing);
 
-  // g_pressures
-  unsigned int pressuresSSBO;
-  glGenBuffers(1, &pressuresSSBO);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, pressuresSSBO);
+  // g_pressures_ping
+  unsigned int pressuresSSBOPing;
+  glGenBuffers(1, &pressuresSSBOPing);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, pressuresSSBOPing);
   glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * nParticles, nullptr, GL_DYNAMIC_DRAW);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, pressuresSSBO);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, pressuresSSBOPing);
+
+  // g_positions_pong
+  unsigned int positionsSSBOPong;
+  glGenBuffers(1, &positionsSSBOPong);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, positionsSSBOPong);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * 3 * nParticles, nullptr, GL_DYNAMIC_DRAW);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, positionsSSBOPong);
+
+  // g_velocities_pong
+  unsigned int velocitiesSSBOPong;
+  glGenBuffers(1, &velocitiesSSBOPong);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, velocitiesSSBOPong);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * 3 * nParticles, nullptr, GL_DYNAMIC_DRAW);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, velocitiesSSBOPong);
 
   initParticles.use();
   initParticles.uniform("nParticles", nParticles);
@@ -264,9 +279,9 @@ int main() {
     144.0f;  // this is somehow tied to smoothing radius (smaller radius needs bigger lookahead)
 
   // box
-  float tankLength = 5.0f;
-  float tankWidth = 2.5f;
-  float tankHeight = 2.5f;
+  float tankLength = 6.0f;
+  float tankWidth = 3.0f;
+  float tankHeight = 3.0f;
   unsigned int boxVAO;
   unsigned int boxVBO;
   unsigned int boxEBO;
@@ -295,7 +310,7 @@ int main() {
     0, 4, 1,
     1, 5, 2,
     3, 2, 7,
-    4, 0, 7,
+    4, 0, 7
     // clang-format on
   };
   glGenVertexArrays(1, &boxVAO);
@@ -314,6 +329,42 @@ int main() {
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 
   glBindVertexArray(0);
+
+  // make quad
+  unsigned int quadVAO;
+  unsigned int quadVBO;
+  unsigned int quadEBO;
+  float quadVertices[] = {
+    // clang-format off
+    -0.04f,  0.04f, 0.0f, 0.0f, 1.0f,
+    -0.04f, -0.04f, 0.0f, 0.0f, 0.0f,
+     0.04f,  0.04f, 0.0f, 1.0f, 1.0f,
+     0.04f, -0.04f, 0.0f, 1.0f, 0.0f
+    // clang-format on
+  };
+  unsigned int quadIndices[] = {
+    // clang-format off
+    0, 1, 2,
+    2, 1, 3
+    // clang-format on
+  };
+
+  glGenVertexArrays(1, &quadVAO);
+  glGenBuffers(1, &quadVBO);
+  glGenBuffers(1, &quadEBO);
+
+  glBindVertexArray(quadVAO);
+
+  glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, quadEBO);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(quadIndices), quadIndices, GL_STATIC_DRAW);
+
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
 
   // DEMO PARALLEL
   struct ParticleHandle {
@@ -390,6 +441,8 @@ int main() {
 
   unsigned int rename_this = 0;
 
+  TracyGpuContext;
+
   while (!glfwWindowShouldClose(window)) {
     auto origin = state.camera.origin();
     auto [u, v, w] = state.camera.basis();
@@ -408,19 +461,30 @@ int main() {
       if (state.isMovingUpward) delta += v * speed * deltaTime;
       state.camera.translateBy(delta);
 
-      {
-        ZoneScopedN("PART_SORT");
-        if (rename_this == 1) {  // anywhere between 1-100 time steps is recommended
-          // sort particles (helps coalesce reads/writes into GPU memory)
-          // ------------------------------------------------------------
+      if (rename_this == 10) {  // anywhere between 1-100 time steps is recommended
+        // sort particles (helps coalesce reads/writes into GPU memory)
+        // ------------------------------------------------------------
+        {
+          ZoneScopedN("PART_SORT");
+          TracyGpuZone("PART_SORT");
 
-          rename_this = 0;
+          sortParticles1.use();
+          glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
+          glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+          sortParticles2.use();
+          glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
+          glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         }
-        rename_this++;
+        // but why is the bottleneck in HASH and not here?
+
+        rename_this = 0;
       }
+      rename_this++;
 
       {
-        ZoneScopedN("(HASH)");
+        ZoneScopedN("HASH");
+        TracyGpuZone("(HASH)");
         radixSortHash.use();
         radixSortHash.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
         radixSortHash.uniform("smoothingRadius", smoothingRadius);
@@ -431,6 +495,7 @@ int main() {
 
       {
         ZoneScopedN("RADIX_SORT");
+        TracyGpuZone("RADIX_SORT");
 
         // sorting particle handles
         // ------------------------
@@ -441,7 +506,8 @@ int main() {
           glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
           {
-            ZoneScopedN("(COUNT)");
+            ZoneScopedN("COUNT");
+            TracyGpuZone("(COUNT)");
             radixSortCount.use();
             radixSortCount.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
             radixSortCount.uniform("smoothingRadius", smoothingRadius);
@@ -452,7 +518,8 @@ int main() {
           }
 
           {
-            ZoneScopedN("(SCAN)");
+            ZoneScopedN("SCAN");
+            TracyGpuZone("(SCAN)");
             radixSortScan.use();
             curr_n = ceil(static_cast<float>(nParticles) / WORKGROUP_SIZE) * RADIX;
             unsigned int offset = 0;
@@ -472,6 +539,7 @@ int main() {
 
           {
             ZoneScopedN("(SCATTER)");
+            TracyGpuZone("(SCATTER)");
             radixSortScatter.use();
             radixSortScatter.uniform("pass", pass);
             radixSortScatter.uniform("nParticles", (unsigned int)nParticles);
@@ -483,6 +551,7 @@ int main() {
 
       {
         ZoneScopedN("HASH-INDICES");
+        TracyGpuZone("HASH-INDICES");
         // maybe clear it to HASH_TABLE_SIZE once, then launch shader for nParticles to write the
         // stuff if different from previous one to clear
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, hashIndicesSSBO);
@@ -501,6 +570,7 @@ int main() {
       if (!state.isPaused) {
         {
           ZoneScopedN("SPH-1");
+          TracyGpuZone("SPH-1");
           sph1.use();
           sph1.uniform("deltaTimePred", deltaTimePred);
           sph1.uniform("nParticles", (unsigned int)nParticles);
@@ -513,6 +583,7 @@ int main() {
 
         {
           ZoneScopedN("SPH-2");
+          TracyGpuZone("SPH-2");
           sph2.use();
           sph2.uniform("deltaTime", deltaTime);
           sph2.uniform("deltaTimePred", deltaTimePred);
@@ -532,41 +603,51 @@ int main() {
       accumulatedTime -= deltaTime;
 
       break;  // TODO: REMOVE THIS
-
-      // My findings:
-      // RADIX_SORT is ~6-7 ms for 65536 particles when static but ~13-14 ms when moving. Problem is
-      // likely uncoalesced reads/writes.
-      // The best way to solve this might be to sort the particles buffer every few simulation
-      // steps.
     }
 
-    glClearColor(0.6f, 0.88f, 1.0f, 1.0f);
+    // glClearColor(0.6f, 0.88f, 1.0f, 1.0f);
+    glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    particleShader.use();
-    particleShader.uniform("view", state.camera.view());
-    particleShader.uniform("projection", state.camera.projection());
-    particleShader.uniform("nParticles", (unsigned int)nParticles);
-    particleShader.uniform("smoothingRadius", smoothingRadius);
-    particleShader.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
-    particleShader.uniform("deltaTimePred", deltaTimePred);
+    {
+      ZoneScopedN("DRAW PARTICLES");
+      TracyGpuZone("DRAW PARTICLES");
 
-    particle.draw(nParticles);
+      particleShader.use();
+      particleShader.uniform("camera.view", state.camera.view());
+      particleShader.uniform("camera.projection", state.camera.projection());
+      particleShader.uniform("camera.u", u);
+      particleShader.uniform("camera.v", v);
+      particleShader.uniform("camera.w", w);
+      particleShader.uniform("nParticles", (unsigned int)nParticles);
+      // particleShader.uniform("smoothingRadius", smoothingRadius);
+      // particleShader.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
+      // particleShader.uniform("deltaTimePred", deltaTimePred);
 
-    tankShader.use();
-    tankShader.uniform("model", glm::mat4(1.0));
-    tankShader.uniform("view", state.camera.view());
-    tankShader.uniform("projection", state.camera.projection());
+      glBindVertexArray(quadVAO);
+      glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, nParticles);
+      glBindVertexArray(0);
+    }
 
-    glBindVertexArray(boxVAO);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    glDrawElements(GL_TRIANGLES, 48, GL_UNSIGNED_INT, 0);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-    glBindVertexArray(0);
+    {
+      ZoneScopedN("DRAW TANK");
+      TracyGpuZone("DRAW TANK");
+      tankShader.use();
+      tankShader.uniform("model", glm::mat4(1.0));
+      tankShader.uniform("view", state.camera.view());
+      tankShader.uniform("projection", state.camera.projection());
+
+      glBindVertexArray(boxVAO);
+      glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+      glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
+      glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+      glBindVertexArray(0);
+    }
 
     glfwSwapBuffers(window);
     glfwPollEvents();
 
+    TracyGpuCollect;
     FrameMark;
   }
 

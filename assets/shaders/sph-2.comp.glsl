@@ -154,6 +154,9 @@ vec3 acceleration(vec3 position_i, vec3 velocity_i, float density_i, float press
   return acceleration_i;
 }
 
+// maybe position clamping? Or smoothing kernel computation?
+// why is this almost twice as long as SPH1. There are two smoothing kernels so maybe it's that?
+
 void main() {
   uint g_tid = gl_GlobalInvocationID.x;
 
