@@ -9,8 +9,6 @@
 //   void handleKeyEvent();
 //   void handleMouseEvent();
 
-
-
 //  private:
 //   Camera camera;
 // };
