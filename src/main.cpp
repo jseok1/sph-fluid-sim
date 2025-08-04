@@ -38,7 +38,8 @@ struct State {
   bool isMovingRightward = false;
   bool isMovingUpward = false;
   bool isMovingDownward = false;
-  bool isPaused = true;
+  bool isPaused = false;
+  bool isPseudoPaused = true;
 
   Camera camera = Camera(fovy, width, height, near, far);
 } state;
@@ -73,7 +74,8 @@ void processKey(GLFWwindow* window, int key, int scancode, int action, int mods)
     }
 
     if (key == GLFW_KEY_P) {
-      state.isPaused = !state.isPaused;
+      state.isPseudoPaused = !state.isPseudoPaused;
+      return;
     }
 
     if (key == GLFW_KEY_W) {
@@ -130,6 +132,21 @@ void processKey(GLFWwindow* window, int key, int scancode, int action, int mods)
   }
 }
 
+/*
+Each particle conducts a linear neighborhood search.
+All particles in a workgroup are spatially close to each other because the particles are
+periodically sorted according to their Morton code. So, their neighors are also the same, and the
+cache-hit rate is high.
+Particles move gradually across each time step, so the cache-hit rate remains high.
+
+Pausing the simulation does NOT improve performance for subsequent frames, so it is not a caching
+issue. Probably, it's with particles on the boundaries, since many MANY particles get trapped there.
+
+L2 cache is shared across ALL SMs.
+L1 cache is shared within workgroups in an SM.
+
+*/
+
 int main() {
   glfwInit();
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -181,7 +198,7 @@ int main() {
 
   RenderShader particleShader, tankShader;
   ComputeShader sph1, sph2, radixSortHash, radixSortCount, radixSortScan, radixSortScatter,
-    radixSortSwap, hashIndicesClear, hashIndices, initParticles, sortParticles1, sortParticles2;
+    radixSortSwap, hashIndicesClear, hashToIndex, initParticles, sortParticles1, sortParticles2;
   try {
     particleShader.build(
       "./assets/shaders/particle.vert.glsl", "./assets/shaders/particle.frag.glsl"
@@ -193,7 +210,7 @@ int main() {
     radixSortCount.build("./assets/shaders/radix-sort-1-count.comp.glsl");
     radixSortScan.build("./assets/shaders/radix-sort-2-scan.comp.glsl");
     radixSortScatter.build("./assets/shaders/radix-sort-3-scatter.comp.glsl");
-    hashIndices.build("./assets/shaders/hash-indices.comp.glsl");
+    hashToIndex.build("./assets/shaders/hash-to-index.comp.glsl");
     initParticles.build("./assets/shaders/init-particles.comp.glsl");
     sortParticles1.build("./assets/shaders/sort-particles-1.comp.glsl");
     sortParticles2.build("./assets/shaders/sort-particles-2.comp.glsl");
@@ -209,7 +226,7 @@ int main() {
   Texture densityGradient{"./assets/textures/density-gradient.png"};
   densityGradient.use(0);
 
-  const unsigned int nParticles = 64 * 64 * 64;
+  const unsigned int nParticles = 64 * 64 * 32;  // 64 * 64 * 64;
   static_assert(nParticles % WORKGROUP_SIZE == 0);
   static_assert(WORKGROUP_SIZE >= RADIX);
 
@@ -439,9 +456,11 @@ int main() {
   float prevTime = glfwGetTime();
   float accumulatedTime = 0.0f;
 
-  unsigned int rename_this = 0;
+  int rename_this = 0;
 
   TracyGpuContext;
+
+  // Try making the positions scattered to see if it's caching.
 
   while (!glfwWindowShouldClose(window)) {
     auto origin = state.camera.origin();
@@ -461,11 +480,13 @@ int main() {
       if (state.isMovingUpward) delta += v * speed * deltaTime;
       state.camera.translateBy(delta);
 
+      // 30-40 ms without
+      // 2 + 5 ms with (for sorting every 10 frames)
+      // This makes a huge difference.
       if (rename_this == 10) {  // anywhere between 1-100 time steps is recommended
         // sort particles (helps coalesce reads/writes into GPU memory)
         // ------------------------------------------------------------
         {
-          ZoneScopedN("PART_SORT");
           TracyGpuZone("PART_SORT");
 
           sortParticles1.use();
@@ -476,14 +497,12 @@ int main() {
           glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
           glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         }
-        // but why is the bottleneck in HASH and not here?
 
         rename_this = 0;
       }
       rename_this++;
 
       {
-        ZoneScopedN("HASH");
         TracyGpuZone("(HASH)");
         radixSortHash.use();
         radixSortHash.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
@@ -494,7 +513,6 @@ int main() {
       }
 
       {
-        ZoneScopedN("RADIX_SORT");
         TracyGpuZone("RADIX_SORT");
 
         // sorting particle handles
@@ -506,7 +524,6 @@ int main() {
           glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
           {
-            ZoneScopedN("COUNT");
             TracyGpuZone("(COUNT)");
             radixSortCount.use();
             radixSortCount.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
@@ -518,7 +535,6 @@ int main() {
           }
 
           {
-            ZoneScopedN("SCAN");
             TracyGpuZone("(SCAN)");
             radixSortScan.use();
             curr_n = ceil(static_cast<float>(nParticles) / WORKGROUP_SIZE) * RADIX;
@@ -538,7 +554,6 @@ int main() {
           }
 
           {
-            ZoneScopedN("(SCATTER)");
             TracyGpuZone("(SCATTER)");
             radixSortScatter.use();
             radixSortScatter.uniform("pass", pass);
@@ -550,8 +565,7 @@ int main() {
       }
 
       {
-        ZoneScopedN("HASH-INDICES");
-        TracyGpuZone("HASH-INDICES");
+        TracyGpuZone("HASH-TO-INDEX");
         // maybe clear it to HASH_TABLE_SIZE once, then launch shader for nParticles to write the
         // stuff if different from previous one to clear
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, hashIndicesSSBO);
@@ -560,7 +574,7 @@ int main() {
         );
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-        hashIndices.use();
+        hashToIndex.use();
         glDispatchCompute((unsigned int)nParticles / WORKGROUP_SIZE, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
       }
@@ -569,7 +583,6 @@ int main() {
       // --------------
       if (!state.isPaused) {
         {
-          ZoneScopedN("SPH-1");
           TracyGpuZone("SPH-1");
           sph1.use();
           sph1.uniform("deltaTimePred", deltaTimePred);
@@ -582,7 +595,6 @@ int main() {
         }
 
         {
-          ZoneScopedN("SPH-2");
           TracyGpuZone("SPH-2");
           sph2.use();
           sph2.uniform("deltaTime", deltaTime);
@@ -595,6 +607,7 @@ int main() {
           sph2.uniform("tankHeight", tankHeight);
           sph2.uniform("tankWidth", tankWidth);
           sph2.uniform("seed", currTime);
+          sph2.uniform("isPseudoPaused", state.isPseudoPaused);
           glDispatchCompute((unsigned int)nParticles / 128, 1, 1);
           glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         }
@@ -602,7 +615,7 @@ int main() {
 
       accumulatedTime -= deltaTime;
 
-      break;  // TODO: REMOVE THIS
+      break;  // TODO: REMOVE THIS (this limits 1 physics update per frame)
     }
 
     // glClearColor(0.6f, 0.88f, 1.0f, 1.0f);
@@ -610,7 +623,6 @@ int main() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     {
-      ZoneScopedN("DRAW PARTICLES");
       TracyGpuZone("DRAW PARTICLES");
 
       particleShader.use();
@@ -630,7 +642,6 @@ int main() {
     }
 
     {
-      ZoneScopedN("DRAW TANK");
       TracyGpuZone("DRAW TANK");
       tankShader.use();
       tankShader.uniform("model", glm::mat4(1.0));

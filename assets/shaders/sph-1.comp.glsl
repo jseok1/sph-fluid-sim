@@ -71,8 +71,8 @@ uniform float lookAhead;
 
 // TODO: make uniforms
 const float pi = 3.1415926535;
-const float rest_density = 0.0;
-const float gas = 8.31;
+const float density_rest = 0.5;
+const float stiffness = 8.31;
 
 uint interleave_bits(uint bits) {
   bits &= 0x000003FF;  // keep only 10 bits (3 x 10 bits = 30 bits <= 32 bits)
@@ -108,6 +108,7 @@ float density_i(vec3 position_i, vec3 velocity_i) {
     uint q = g_cells[hash];
     while (q < nParticles && g_handles_front[q].hash == hash) {
       uint j = g_handles_front[q].index;
+      // small optimization: precompute predicted position to only read 3 elements, not 6
       vec3 position_j = vec3(g_positions[3 * j], g_positions[3 * j + 1], g_positions[3 * j + 2]);  // coalesced right?
       vec3 velocity_j = vec3(g_velocities[3 * j], g_velocities[3 * j + 1], g_velocities[3 * j + 2]);
 
@@ -123,7 +124,7 @@ float density_i(vec3 position_i, vec3 velocity_i) {
 }
 
 float pressure(float density_i) {
-  return gas * (density_i - rest_density);
+  return stiffness * (density_i - density_rest);
 }
 
 void main() {

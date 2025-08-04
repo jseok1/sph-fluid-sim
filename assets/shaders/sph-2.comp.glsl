@@ -41,6 +41,7 @@ uniform float tankLength;
 uniform float tankWidth;
 uniform float tankHeight;
 uniform float seed;
+uniform bool isPseudoPaused;
 
 const float pi = 3.1415926535;
 const float gravity = 9.81;
@@ -106,6 +107,8 @@ vec3 random_dir() {
 }
 
 vec3 grad_spiky(vec3 origin, vec3 position) {
+  // idea: use precomputed lookup table for kernel and its gradient
+  // gradient evaluation is one of the most time consuming steps (more on this in DFSPH paper)
   float distance = distance(origin, position);
   vec3 dir = origin != position ? normalize(origin - position) : normalize(random_dir());
   float b = max(0.0, smoothingRadius - distance);
@@ -179,10 +182,12 @@ void main() {
   velocity_i.z *= position_i.z < -tankWidth || position_i.z > tankWidth ? -0.5 : 1.0;
   position_i.z = clamp(position_i.z, -tankWidth, tankWidth);
 
-  g_positions[3 * i] = position_i.x;
-  g_positions[3 * i + 1] = position_i.y;
-  g_positions[3 * i + 2] = position_i.z;
-  g_velocities[3 * i] = velocity_i.x;
-  g_velocities[3 * i + 1] = velocity_i.y;
-  g_velocities[3 * i + 2] = velocity_i.z;
+  if (!isPseudoPaused) {
+    g_positions[3 * i] = position_i.x;
+    g_positions[3 * i + 1] = position_i.y;
+    g_positions[3 * i + 2] = position_i.z;
+    g_velocities[3 * i] = velocity_i.x;
+    g_velocities[3 * i + 1] = velocity_i.y;
+    g_velocities[3 * i + 2] = velocity_i.z;
+  }
 }

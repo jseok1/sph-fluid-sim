@@ -60,6 +60,10 @@ uint hash(vec3 position) {
   return hash;
 }
 
+/**
+ * This kernel recomputes the hash for a particle based on its new (predicted) position from the
+ * latest physics update.
+ */
 void main() {
   uint g_tid = gl_GlobalInvocationID.x;
 

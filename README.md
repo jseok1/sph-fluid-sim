@@ -173,6 +173,12 @@ while (max() > eta or k < 3) do
 for each particle i do
     integrate
 
+IISPH
+
+
+DFSPH
+
+
 
 https://arxiv.org/abs/2212.07679
 
@@ -204,3 +210,47 @@ SIMD processing unit
 
 Blelloch:
 https://ams148-spring18-01.courses.soe.ucsc.edu/system/files/attachments/note5.pdf -->
+
+## Incompressible Fluid Solvers
+
+```math
+\frac{D\textbf{v}}{Dt} = -\frac{1}{\rho}\nabla p + \nu\nabla^2\textbf{v} + \frac{\textbf{g}}{\rho}
+\nabla \cdot \textbf{v} = 0
+```
+
+
+CLF condition.
+
+PCISPH < IISPH < DFSPH
+
+## Neighborhood Search
+
+Sort particles based on uniform grid and Z-index sorting.
+
+
+### GPU Radix Sort
+
+### Spatial Hashing with a Z-Order Curve
+
+
+## Rigid-Fluid Boundary Handling
+
+* Particle-based boundary handling is popular. Surface-sampled approaches (as opposed to
+volume-sampled) approaches is more popular.
+
+
+How do you evaluate pressure values at boundaries?
+pressure mirroring: assume the pressure at a boundary particle is the same as that of the fluid
+particle being evaluated.
+pressure boundaries: use SPH-like formulation to estimate pressure values at boundary particles
+using a discretization of the pressure Poisson equation, resulting in a system of equations that is solved using a relaxed Jacobi method.
+moving least squares pressure extrapolation
+
+
+
+ALSO:
+Which kernels?
+cubic spline
+
+Surface tension.
+
