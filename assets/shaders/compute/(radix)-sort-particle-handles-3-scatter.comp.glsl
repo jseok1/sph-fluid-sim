@@ -10,20 +10,20 @@ struct ParticleHandle {
   uint index;
 };
 
-layout(std430, binding = 2) buffer ParticleHandlesFrontBuffer {
-  ParticleHandle g_handles_front[];
+layout(std430, binding = 7) buffer ParticleHandlesFrontBuffer {
+  ParticleHandle g_particle_handles_front[];
 };
 
-layout(std430, binding = 3) buffer ParticleHandlesBackBuffer {
-  ParticleHandle g_handles_back[];
+layout(std430, binding = 8) buffer ParticleHandlesBackBuffer {
+  ParticleHandle g_particle_handles_back[];
 };
 
-layout(std430, binding = 4) readonly buffer OffsetsBuffer {
+layout(std430, binding = 10) readonly buffer HistogramBuffer {
   uint g_histogram[];
 };
 
 uniform uint pass;
-uniform uint nParticles;
+uniform uint particle_count;
 
 shared uint l_histogram[RADIX];
 
@@ -33,12 +33,12 @@ void main() {
   uint wid = gl_WorkGroupID.x;
   uint WORKGROUPS = gl_NumWorkGroups.x;
 
-  ParticleHandle handle = (pass & 0x1) == 0 ? g_handles_front[g_tid] : g_handles_back[g_tid];
+  ParticleHandle handle = (pass & 0x1) == 0 ? g_particle_handles_front[g_tid] : g_particle_handles_back[g_tid];
   uint key = handle.hash;
   uint digit = (key >> 8 * pass) & 0xFF;
 
-  if (l_tid == 0 || digit != ((((pass & 0x1) == 0 ? g_handles_front[g_tid - 1].hash
-                                                : g_handles_back[g_tid - 1].hash) >>
+  if (l_tid == 0 || digit != ((((pass & 0x1) == 0 ? g_particle_handles_front[g_tid - 1].hash
+                                                : g_particle_handles_back[g_tid - 1].hash) >>
                                8 * pass) &
                               0xFF)) {
     l_histogram[digit] = l_tid;
@@ -49,7 +49,7 @@ void main() {
   uint g_offset = 0;
 
   uint curr_i = digit * WORKGROUPS + wid;
-  uint curr_n = uint(ceil(float(nParticles) / WORKGROUP_SIZE) * RADIX);
+  uint curr_n = uint(ceil(float(particle_count) / WORKGROUP_SIZE) * RADIX);
   uint offset = 0;
   while (curr_n > 1) {
     g_offset += g_histogram[offset + curr_i];
@@ -60,8 +60,8 @@ void main() {
   }
 
   if ((pass & 0x1) == 0) {
-    g_handles_back[l_tid - l_offset + g_offset] = handle;
+    g_particle_handles_back[l_tid - l_offset + g_offset] = handle;
   } else {
-    g_handles_front[l_tid - l_offset + g_offset] = handle;
+    g_particle_handles_front[l_tid - l_offset + g_offset] = handle;
   }
 }

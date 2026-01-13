@@ -1,11 +1,11 @@
 #version 460 core
 
-layout(std430, binding = 0) readonly buffer Positions {
-  float g_positions[];
+layout(std430, binding = 0) readonly buffer PositionsFrontBuffer {
+  float g_positions_front[];
 };
 
-layout(std430, binding = 7) readonly buffer Velocities {
-  float g_velocities[];
+layout(std430, binding = 2) readonly buffer VelocitiesFrontBuffer {
+  float g_velocities_front[];
 };
 
 layout(location = 0) in vec3 v_xyz;
@@ -23,7 +23,7 @@ struct Camera {
 };
 
 uniform Camera camera;
-uniform uint nParticles;
+uniform uint particle_count;
 // uniform float smoothingRadius;
 
 // const float pi = 3.1415926535;
@@ -100,8 +100,12 @@ void main() {
   uint g_tid = gl_BaseInstance + gl_InstanceID;
 
   uint i = g_tid;
-  vec3 position_i = vec3(g_positions[3 * i], g_positions[3 * i + 1], g_positions[3 * i + 2]);
-  vec3 velocity_i = vec3(g_velocities[3 * i], g_velocities[3 * i + 1], g_velocities[3 * i + 2]);
+  vec3 position_i = vec3(g_positions_front[3 * i + 0],
+                         g_positions_front[3 * i + 1],
+                         g_positions_front[3 * i + 2]);
+  vec3 velocity_i = vec3(g_velocities_front[3 * i + 0],
+                         g_velocities_front[3 * i + 1],
+                         g_velocities_front[3 * i + 2]);
 
   gl_Position = camera.projection * camera.view * vec4(position_i + camera.u * v_xyz.x + camera.v * v_xyz.y, 1.0);
 
@@ -110,7 +114,7 @@ void main() {
 
   // uint TRACK = 436;
   // uint h = hash(position_i);
-  // vec3 position_track = vec3(g_positions[3 * TRACK], g_positions[3 * TRACK + 1], g_positions[3 * TRACK + 2]);
+  // vec3 position_track = vec3(g_positions_front[3 * TRACK], g_positions_front[3 * TRACK + 1], g_positions_front[3 * TRACK + 2]);
   // for (int i = 0; i < 27; i++) {
   //   if (h == hash(position_track + neighborhood[i] * smoothingRadius)) {
   //     f_sample = vec4(0.75, 0.25, 0.25, 0.5);
