@@ -27,10 +27,6 @@ layout(std430, binding = 9) readonly buffer ParticleHandleOffsetsBuffer {
   uint g_particle_handle_offsets[];
 };
 
-layout(std430, binding = 11) buffer DebugBuffer {
-  float g_debug[];
-};
-
 vec3 neighborhood[27] = {
   // clang-format off
   vec3(-1.0, -1.0, -1.0),
@@ -99,10 +95,10 @@ uint hash(vec3 position) {
 }
 
 float kernel(vec3 position_i, vec3 position_j) {
-  // SPIKY
+  // POLY6
   float r = distance(position_i, position_j);
-  float residual = max(0.0, h - r);
-  return 15.0 / (pi * h * h * h * h * h * h) * residual * residual * residual;
+  float residual = max(0.0, h * h - r * r);
+  return 315.0 / (64.0 * pi * pow(h, 9)) * residual * residual * residual;
 }
 
 vec3 grad_kernel(vec3 position_i, vec3 position_j) {
@@ -110,7 +106,7 @@ vec3 grad_kernel(vec3 position_i, vec3 position_j) {
   float r = distance(position_i, position_j);
   vec3 direction = r > 1e-8 ? normalize(position_i - position_j) : vec3(0.0);
   float residual = max(0.0, h - r);
-  return -45.0 / (pi * h * h * h * h * h * h) * residual * residual * direction;
+  return -45.0 / (pi * pow(h, 6)) * residual * residual * direction;
 }
 
 void main() {
@@ -122,7 +118,7 @@ void main() {
                               g_positions_pred[3 * i + 1],
                               g_positions_pred[3 * i + 2]);
 
-  // float normalization = kernel(vec3(0.0, 0.0, 0.0), vec3(0.1 * h, 0.1 * h, 0.1 * h));
+  float normalization = kernel(vec3(0.0, 0.0, 0.0), vec3(0.3 * h, 0.0, 0.0));
 
   vec3 delta_position_i = vec3(0.0);
   for (uint p = 0; p < 27; p++) {
@@ -135,15 +131,13 @@ void main() {
                                     g_positions_pred[3 * j + 1],
                                     g_positions_pred[3 * j + 2]);
 
-        // float kernel_i = kernel(position_pred_i, position_pred_j);
-
         float multiplier_i = g_multipliers[i];
         float multiplier_j = g_multipliers[j];
 
         // artificial pressure
-        // float corr = kernel_i / normalization;
-        // delta_position_i += (multiplier_i + multiplier_j - 0.1 * corr * corr * corr * corr) * grad_kernel_i;
-        delta_position_i += (multiplier_i + multiplier_j) * mass * grad_kernel(position_pred_i, position_pred_j);
+        float corr = kernel(position_pred_i, position_pred_j) / normalization;
+        // is 0.0001 too small? is this doing anything?
+        delta_position_i += (multiplier_i + multiplier_j - 0.0001 * pow(corr, 4)) * mass * grad_kernel(position_pred_i, position_pred_j);
       }
       q++;
     }
@@ -152,27 +146,23 @@ void main() {
 
   vec3 position_i = position_pred_i + delta_position_i;
 
-  // g_debug[3 * i + 0] = position_i.x;
-  // g_debug[3 * i + 1] = position_i.y;
-  // g_debug[3 * i + 2] = position_i.z;
- 
   if (position_i.x > tank_length) {
-    position_i.x = tank_length - 0.9 * (position_i.x - tank_length);
+    position_i.x = tank_length - 0.5 * (position_i.x - tank_length);
   }
   if (position_i.x < -tank_length) {
-    position_i.x = -tank_length - 0.9 * (position_i.x + tank_length);
+    position_i.x = -tank_length - 0.5 * (position_i.x + tank_length);
   }
   if (position_i.y > tank_height) {
-    position_i.y = tank_height - 0.9 * (position_i.y - tank_height);
+    position_i.y = tank_height - 0.5 * (position_i.y - tank_height);
   }
   if (position_i.y < -tank_height) {
-    position_i.y = -tank_height - 0.9 * (position_i.y + tank_height);
+    position_i.y = -tank_height - 0.5 * (position_i.y + tank_height);
   }
   if (position_i.z > tank_width) {
-    position_i.z = tank_width - 0.9 * (position_i.z - tank_width);
+    position_i.z = tank_width - 0.5 * (position_i.z - tank_width);
   }
   if (position_i.z < -tank_width) {
-    position_i.z = -tank_width - 0.9 * (position_i.z + tank_width);
+    position_i.z = -tank_width - 0.5 * (position_i.z + tank_width);
   }
 
   delta_position_i = position_i - position_pred_i;

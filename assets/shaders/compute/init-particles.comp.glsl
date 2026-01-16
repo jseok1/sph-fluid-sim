@@ -12,7 +12,10 @@ layout(std430, binding = 2) buffer VelocitiesFrontBuffer {
   float g_velocities_front[];
 };
 
+uniform float mass;
 uniform uint particle_count;
+uniform float h;
+uniform float density_rest;
 
 void main() {
   uint g_tid = gl_GlobalInvocationID.x;

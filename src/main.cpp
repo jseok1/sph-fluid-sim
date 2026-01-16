@@ -32,9 +32,9 @@ const bool fullscreen = true;
 const float speed = 5.0f;
 const float sensitivity = 0.05f;
 
-const float tank_length = 6.0f;
-const float tank_width = 3.0f;
-const float tank_height = 3.0f;
+const float tank_length = 2.0f;
+const float tank_width = 2.0f;
+const float tank_height = 2.0f;
 
 struct State {
   bool is_moving_forward = false;
@@ -44,7 +44,8 @@ struct State {
   bool is_moving_upward = false;
   bool is_moving_downward = false;
   bool is_paused = false;
-  bool is_resetting = false;
+  bool is_resetting_simulation = false;
+  bool is_resetting_camera = false;
 
   Camera camera = Camera(fovy, width, height, near, far);
 } state;
@@ -79,7 +80,12 @@ void processKey(GLFWwindow* window, int key, int scancode, int action, int mods)
     }
 
     if (key == GLFW_KEY_R) {
-      state.is_resetting = !state.is_resetting;
+      state.is_resetting_simulation = !state.is_resetting_simulation;
+      return;
+    }
+
+    if (key == GLFW_KEY_X) {
+      state.is_resetting_camera = !state.is_resetting_camera;
       return;
     }
 
@@ -256,10 +262,6 @@ int main() {
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_SAMPLES, 4);
 
-#ifdef __APPLE__
-  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-#endif
-
   GLFWwindow* window;
   if (fullscreen) {
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
@@ -338,19 +340,22 @@ int main() {
     return 1;
   }
 
-  // uniforms should all be a static member function of the pipeline class
-
   // TODO: wrap everything in the try-catch
 
   Texture densityGradient{"./assets/textures/density-gradient.png"};
   densityGradient.use(0);
 
-  const float h = 1e-1f;
-  const uint32_t particle_count = 16 * 16 * 16;
-  const float mass = 1e-6f;
-  const float density_rest = 1e-1f;
+  const float h = 0.2f;
+  const uint32_t particle_count = 32 * 16 * 16;
+  const float mass = 1.0f;
+  const float density_rest = 50.0f;
   const uint32_t HASH_TABLE_SIZE =
-    WORKGROUP_SIZE * 16;  // 2 * particle_count is recommended (Ihmsen et al.)
+    WORKGROUP_SIZE * 32;  // 2 * particle_count is recommended (Ihmsen et al.)
+
+  // (Green, 2008) neighbor search
+  // (Bridson et al, 2006) fluid-solid collision
+
+  // explore when mass is/isn't necessary
 
   static_assert(WORKGROUP_SIZE >= RADIX);
 
@@ -393,6 +398,14 @@ int main() {
     g_positions_pred, sizeof(float) * 3 * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
   );
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, g_positions_pred);
+
+  GLuint g_positions_pred_back;
+  glCreateBuffers(1, &g_positions_pred_back);
+  glObjectLabel(GL_BUFFER, g_positions_pred_back, -1, "g_positions_pred");
+  glNamedBufferStorage(
+    g_positions_pred_back, sizeof(float) * 3 * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
+  );
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, g_positions_pred_back);
 
   GLuint g_delta_positions;
   glCreateBuffers(1, &g_delta_positions);
@@ -477,14 +490,18 @@ int main() {
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
   init_particles.use();
+  init_particles.uniform("mass", mass);
   init_particles.uniform("particle_count", particle_count);
+  init_particles.uniform("h", h);
+  init_particles.uniform("density_rest", density_rest);
   glDispatchCompute((uint32_t)particle_count / WORKGROUP_SIZE, 1, 1);
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
   GLuint quadVAO = quad();
   GLuint tankVAO = tank();
 
-  const float delta_time = 1.0f / 144.0f;
+  const float delta_time = 0.0069f;
+  const float get_rid_of_this = 1.0f;
   float prev_time = glfwGetTime();
   float accumulated_time = 0.0f;
 
@@ -512,12 +529,18 @@ int main() {
       if (state.is_moving_upward) delta += v * speed * delta_time;
       state.camera.translateBy(delta);
 
-      if (state.is_resetting) {
+      if (state.is_resetting_simulation) {
         init_particles.use();
         init_particles.uniform("particle_count", particle_count);
         glDispatchCompute((uint32_t)particle_count / WORKGROUP_SIZE, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-        state.is_resetting = false;
+        state.is_resetting_simulation = false;
+      }
+
+      if (state.is_resetting_camera) {
+        state.camera.translateTo(glm::vec3(0.0, 0.0, 10.0));
+        state.camera.rotateTo(glm::vec2(0.0, -90.0));
+        state.is_resetting_camera = false;
       }
 
       {
@@ -526,7 +549,7 @@ int main() {
 
         time_integrate_1.use();
         time_integrate_1.uniform("particle_count", particle_count);
-        time_integrate_1.uniform("delta_time", delta_time);
+        time_integrate_1.uniform("delta_time", get_rid_of_this * delta_time);
         time_integrate_1.uniform("h", h);
         time_integrate_1.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
         glDispatchCompute((uint32_t)particle_count / 128, 1, 1);  // TODO make 128 a macro
@@ -648,7 +671,7 @@ int main() {
           time_integrate_2_1.uniform("h", h);
           time_integrate_2_1.uniform("density_rest", density_rest);
           time_integrate_2_1.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
-          glDispatchCompute((unsigned int)particle_count / 128, 1, 1);
+          glDispatchCompute((uint32_t)particle_count / 128, 1, 1);
           glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
           glPopDebugGroup();
         }
@@ -666,7 +689,7 @@ int main() {
           time_integrate_2_2.uniform("tank_length", tank_length);
           time_integrate_2_2.uniform("tank_width", tank_width);
           time_integrate_2_2.uniform("tank_height", tank_height);
-          glDispatchCompute((unsigned int)particle_count / 128, 1, 1);
+          glDispatchCompute((uint32_t)particle_count / 128, 1, 1);
           glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
           glPopDebugGroup();
         }
@@ -677,7 +700,7 @@ int main() {
 
           time_integrate_2_3.use();
           time_integrate_2_3.uniform("particle_count", particle_count);
-          glDispatchCompute((unsigned int)particle_count / 128, 1, 1);
+          glDispatchCompute((uint32_t)particle_count / 128, 1, 1);
           glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
           glPopDebugGroup();
         }
@@ -689,8 +712,8 @@ int main() {
 
         time_integrate_3.use();
         time_integrate_3.uniform("particle_count", particle_count);
-        time_integrate_3.uniform("delta_time", delta_time);
-        glDispatchCompute((unsigned int)particle_count / 128, 1, 1);
+        time_integrate_3.uniform("delta_time", get_rid_of_this * delta_time);
+        glDispatchCompute((uint32_t)particle_count / 128, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         glPopDebugGroup();
       }
@@ -719,6 +742,9 @@ int main() {
           );
           glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
           glPopDebugGroup();
+
+          // you could front-back the predicted positions buffer here and move this right after
+          // radix sort
         }
 
         particle_sort_iters = 0;
@@ -782,6 +808,7 @@ int main() {
   glDeleteBuffers(1, &g_particle_handles_back);
   glDeleteBuffers(1, &g_particle_handle_offsets);
   glDeleteBuffers(1, &g_histogram);
+  glDeleteBuffers(1, &g_debug);
 
   // TODO: also VAO, VBOs, EBOs
 

@@ -98,7 +98,7 @@ vec3 grad_kernel(vec3 position_i, vec3 position_j) {
   float r = distance(position_i, position_j);
   vec3 direction = r > 1e-8 ? normalize(position_i - position_j) : vec3(0.0);
   float residual = max(0.0, h - r);
-  return -45.0 / (pi * h * h * h * h * h * h) * residual * residual * direction;
+  return -45.0 / (pi * pow(h, 6)) * residual * residual * direction;
 }
 
 void main() {
@@ -112,7 +112,7 @@ void main() {
 
   float density_i = mass * kernel(position_pred_i, position_pred_i);
   vec3 grad_constraint_i = vec3(0.0);
-  float summed_squared_grad_constraints = 0.0;
+  float grad_constraints_squared_norm = 0.0;
 
   for (uint p = 0; p < 27; p++) {
     uint hash = hash(position_pred_i + neighborhood[p] * h);
@@ -126,20 +126,20 @@ void main() {
 
         density_i += mass * kernel(position_pred_i, position_pred_j);
 
-        vec3 grad_constraint_j = mass * grad_kernel(position_pred_i, position_pred_j);
-        grad_constraint_i += grad_constraint_j;
+        vec3 grad_constraint_j = mass * grad_kernel(position_pred_i, position_pred_j) / density_rest;
+        grad_constraint_i += grad_constraint_j / density_rest;
 
-        summed_squared_grad_constraints += dot(grad_constraint_j, grad_constraint_j);
+        // dividing by mass?
+        grad_constraints_squared_norm += dot(grad_constraint_j, grad_constraint_j);
       }
       q++;
     }
   }
 
-  summed_squared_grad_constraints += dot(grad_constraint_i, grad_constraint_i);
-  summed_squared_grad_constraints /= density_rest * density_rest;
+  grad_constraints_squared_norm += dot(grad_constraint_i, grad_constraint_i);
 
   float constraint_i = density_i / density_rest - 1.0;
-  float multiplier_i = -constraint_i / (summed_squared_grad_constraints + 1e-5);
+  float multiplier_i = -constraint_i / (grad_constraints_squared_norm + 1e5);
 
   g_multipliers[i] = multiplier_i;
 

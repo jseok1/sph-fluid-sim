@@ -34,7 +34,7 @@ void main() {
   g_positions_front[3 * i + 0] = position_pred_i.x;
   g_positions_front[3 * i + 1] = position_pred_i.y;
   g_positions_front[3 * i + 2] = position_pred_i.z;
- 
+
   g_velocities_front[3 * i + 0] = velocity_i.x;
   g_velocities_front[3 * i + 1] = velocity_i.y;
   g_velocities_front[3 * i + 2] = velocity_i.z;
