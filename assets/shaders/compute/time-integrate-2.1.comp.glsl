@@ -27,35 +27,35 @@ layout(std430, binding = 11) buffer DebugBuffer {
   float g_debug[];
 };
 
-vec3 neighborhood[27] = {
+uvec3 neighborhoods[27] = {
   // clang-format off
-  vec3(-1.0, -1.0, -1.0),
-  vec3(-1.0, -1.0,  0.0),
-  vec3(-1.0, -1.0,  1.0),
-  vec3(-1.0,  0.0, -1.0),
-  vec3(-1.0,  0.0,  0.0),
-  vec3(-1.0,  0.0,  1.0),
-  vec3(-1.0,  1.0, -1.0),
-  vec3(-1.0,  1.0,  0.0),
-  vec3(-1.0,  1.0,  1.0),
-  vec3( 0.0, -1.0, -1.0),
-  vec3( 0.0, -1.0,  0.0),
-  vec3( 0.0, -1.0,  1.0),
-  vec3( 0.0,  0.0, -1.0),
-  vec3( 0.0,  0.0,  0.0),
-  vec3( 0.0,  0.0,  1.0),
-  vec3( 0.0,  1.0, -1.0),
-  vec3( 0.0,  1.0,  0.0),
-  vec3( 0.0,  1.0,  1.0),
-  vec3( 1.0, -1.0, -1.0),
-  vec3( 1.0, -1.0,  0.0),
-  vec3( 1.0, -1.0,  1.0),
-  vec3( 1.0,  0.0, -1.0),
-  vec3( 1.0,  0.0,  0.0),
-  vec3( 1.0,  0.0,  1.0),
-  vec3( 1.0,  1.0, -1.0),
-  vec3( 1.0,  1.0,  0.0),
-  vec3( 1.0,  1.0,  1.0),
+  uvec3(-1, -1, -1),
+  uvec3(-1, -1,  0),
+  uvec3(-1, -1,  1),
+  uvec3(-1,  0, -1),
+  uvec3(-1,  0,  0),
+  uvec3(-1,  0,  1),
+  uvec3(-1,  1, -1),
+  uvec3(-1,  1,  0),
+  uvec3(-1,  1,  1),
+  uvec3( 0, -1, -1),
+  uvec3( 0, -1,  0),
+  uvec3( 0, -1,  1),
+  uvec3( 0,  0, -1),
+  uvec3( 0,  0,  0),
+  uvec3( 0,  0,  1),
+  uvec3( 0,  1, -1),
+  uvec3( 0,  1,  0),
+  uvec3( 0,  1,  1),
+  uvec3( 1, -1, -1),
+  uvec3( 1, -1,  0),
+  uvec3( 1, -1,  1),
+  uvec3( 1,  0, -1),
+  uvec3( 1,  0,  0),
+  uvec3( 1,  0,  1),
+  uvec3( 1,  1, -1),
+  uvec3( 1,  1,  0),
+  uvec3( 1,  1,  1),
   // clang-format on
 };
 
@@ -76,14 +76,16 @@ uint interleave_bits(uint bits) {
   return bits;
 }
 
-uint hash(vec3 position) {
-  // Morton code for locality-preserving hashing
-  uint x = uint((position.x + 5) / h);
-  uint y = uint((position.y + 5) / h);
-  uint z = uint((position.z + 5) / h);
-  uint hash = (interleave_bits(z) << 2) | (interleave_bits(y) << 1) | (interleave_bits(x) << 0);
-  hash = uint(mod(hash, HASH_TABLE_SIZE));  // better if bitwise &
-  return hash;
+/**
+ * Return the Z-value for a neighborhood in a space-filling Z-curve.
+ */
+uint neighborhood_hash(uvec3 id) {
+  uint hash = (interleave_bits(id.z) << 2) | (interleave_bits(id.y) << 1) | (interleave_bits(id.x) << 0);
+  return hash % HASH_TABLE_SIZE;
+}
+
+uvec3 neighborhood_id(vec3 position_pred) {
+  return uvec3(floor(position_pred / h) + 1e5);
 }
 
 float kernel(vec3 position_i, vec3 position_j) {
@@ -113,9 +115,9 @@ void main() {
   float density_i = mass * kernel(position_pred_i, position_pred_i);
   vec3 grad_constraint_i = vec3(0.0);
   float grad_constraints_squared_norm = 0.0;
-
   for (uint p = 0; p < 27; p++) {
-    uint hash = hash(position_pred_i + neighborhood[p] * h);
+    uvec3 id = neighborhood_id(position_pred_i);
+    uint hash = neighborhood_hash(id + neighborhoods[p]);
     uint q = g_particle_handle_offsets[hash];
     while (q < particle_count && g_particle_handles_front[q].hash == hash) {
       uint j = g_particle_handles_front[q].index;
@@ -126,20 +128,18 @@ void main() {
 
         density_i += mass * kernel(position_pred_i, position_pred_j);
 
-        vec3 grad_constraint_j = mass * grad_kernel(position_pred_i, position_pred_j) / density_rest;
-        grad_constraint_i += grad_constraint_j / density_rest;
+        vec3 grad_constraint_j = -mass * grad_kernel(position_pred_i, position_pred_j) / density_rest;
+        grad_constraint_i -= grad_constraint_j;
 
-        // dividing by mass?
         grad_constraints_squared_norm += dot(grad_constraint_j, grad_constraint_j);
       }
       q++;
     }
   }
-
   grad_constraints_squared_norm += dot(grad_constraint_i, grad_constraint_i);
 
   float constraint_i = density_i / density_rest - 1.0;
-  float multiplier_i = -constraint_i / (grad_constraints_squared_norm + 1e5);
+  float multiplier_i = -constraint_i / (grad_constraints_squared_norm + 1e7);
 
   g_multipliers[i] = multiplier_i;
 

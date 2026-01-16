@@ -345,10 +345,10 @@ int main() {
   Texture densityGradient{"./assets/textures/density-gradient.png"};
   densityGradient.use(0);
 
-  const float h = 0.2f;
+  const float h = 0.1f;
   const uint32_t particle_count = 32 * 16 * 16;
   const float mass = 1.0f;
-  const float density_rest = 50.0f;
+  const float density_rest = 20.0f;
   const uint32_t HASH_TABLE_SIZE =
     WORKGROUP_SIZE * 32;  // 2 * particle_count is recommended (Ihmsen et al.)
 
@@ -357,6 +357,7 @@ int main() {
 
   // explore when mass is/isn't necessary
 
+  // particle_count should also fully saturate WORKGROUP
   static_assert(WORKGROUP_SIZE >= RADIX);
 
   GLuint g_positions_front;

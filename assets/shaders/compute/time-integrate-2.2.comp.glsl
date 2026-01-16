@@ -27,35 +27,35 @@ layout(std430, binding = 9) readonly buffer ParticleHandleOffsetsBuffer {
   uint g_particle_handle_offsets[];
 };
 
-vec3 neighborhood[27] = {
+uvec3 neighborhoods[27] = {
   // clang-format off
-  vec3(-1.0, -1.0, -1.0),
-  vec3(-1.0, -1.0,  0.0),
-  vec3(-1.0, -1.0,  1.0),
-  vec3(-1.0,  0.0, -1.0),
-  vec3(-1.0,  0.0,  0.0),
-  vec3(-1.0,  0.0,  1.0),
-  vec3(-1.0,  1.0, -1.0),
-  vec3(-1.0,  1.0,  0.0),
-  vec3(-1.0,  1.0,  1.0),
-  vec3( 0.0, -1.0, -1.0),
-  vec3( 0.0, -1.0,  0.0),
-  vec3( 0.0, -1.0,  1.0),
-  vec3( 0.0,  0.0, -1.0),
-  vec3( 0.0,  0.0,  0.0),
-  vec3( 0.0,  0.0,  1.0),
-  vec3( 0.0,  1.0, -1.0),
-  vec3( 0.0,  1.0,  0.0),
-  vec3( 0.0,  1.0,  1.0),
-  vec3( 1.0, -1.0, -1.0),
-  vec3( 1.0, -1.0,  0.0),
-  vec3( 1.0, -1.0,  1.0),
-  vec3( 1.0,  0.0, -1.0),
-  vec3( 1.0,  0.0,  0.0),
-  vec3( 1.0,  0.0,  1.0),
-  vec3( 1.0,  1.0, -1.0),
-  vec3( 1.0,  1.0,  0.0),
-  vec3( 1.0,  1.0,  1.0),
+  uvec3(-1, -1, -1),
+  uvec3(-1, -1,  0),
+  uvec3(-1, -1,  1),
+  uvec3(-1,  0, -1),
+  uvec3(-1,  0,  0),
+  uvec3(-1,  0,  1),
+  uvec3(-1,  1, -1),
+  uvec3(-1,  1,  0),
+  uvec3(-1,  1,  1),
+  uvec3( 0, -1, -1),
+  uvec3( 0, -1,  0),
+  uvec3( 0, -1,  1),
+  uvec3( 0,  0, -1),
+  uvec3( 0,  0,  0),
+  uvec3( 0,  0,  1),
+  uvec3( 0,  1, -1),
+  uvec3( 0,  1,  0),
+  uvec3( 0,  1,  1),
+  uvec3( 1, -1, -1),
+  uvec3( 1, -1,  0),
+  uvec3( 1, -1,  1),
+  uvec3( 1,  0, -1),
+  uvec3( 1,  0,  0),
+  uvec3( 1,  0,  1),
+  uvec3( 1,  1, -1),
+  uvec3( 1,  1,  0),
+  uvec3( 1,  1,  1),
   // clang-format on
 };
 
@@ -84,14 +84,16 @@ uint interleave_bits(uint bits) {
   return bits;
 }
 
-uint hash(vec3 position) {
-  // Morton code for locality-preserving hashing
-  uint x = uint((position.x + 5) / h);
-  uint y = uint((position.y + 5) / h);
-  uint z = uint((position.z + 5) / h);
-  uint hash = (interleave_bits(z) << 2) | (interleave_bits(y) << 1) | interleave_bits(x);
-  hash = uint(mod(hash, HASH_TABLE_SIZE));  // better if bitwise &
-  return hash;
+/**
+ * Return the Z-value for a neighborhood in a space-filling Z-curve.
+ */
+uint neighborhood_hash(uvec3 id) {
+  uint hash = (interleave_bits(id.z) << 2) | (interleave_bits(id.y) << 1) | (interleave_bits(id.x) << 0);
+  return hash % HASH_TABLE_SIZE;
+}
+
+uvec3 neighborhood_id(vec3 position_pred) {
+  return uvec3(floor(position_pred / h) + 1e5);
 }
 
 float kernel(vec3 position_i, vec3 position_j) {
@@ -118,11 +120,12 @@ void main() {
                               g_positions_pred[3 * i + 1],
                               g_positions_pred[3 * i + 2]);
 
-  float normalization = kernel(vec3(0.0, 0.0, 0.0), vec3(0.3 * h, 0.0, 0.0));
+  float threshold = kernel(vec3(0.0, 0.0, 0.0), vec3(0.3 * h, 0.0, 0.0));
 
   vec3 delta_position_i = vec3(0.0);
   for (uint p = 0; p < 27; p++) {
-    uint hash = hash(position_pred_i + neighborhood[p] * h);
+    uvec3 id = neighborhood_id(position_pred_i);
+    uint hash = neighborhood_hash(id + neighborhoods[p]);
     uint q = g_particle_handle_offsets[hash];
     while (q < particle_count && g_particle_handles_front[q].hash == hash) {
       uint j = g_particle_handles_front[q].index;
@@ -135,9 +138,9 @@ void main() {
         float multiplier_j = g_multipliers[j];
 
         // artificial pressure
-        float corr = kernel(position_pred_i, position_pred_j) / normalization;
-        // is 0.0001 too small? is this doing anything?
-        delta_position_i += (multiplier_i + multiplier_j - 0.0001 * pow(corr, 4)) * mass * grad_kernel(position_pred_i, position_pred_j);
+        float ratio = kernel(position_pred_i, position_pred_j) / threshold;
+        // delta_position_i += (multiplier_i + multiplier_j - 1e-4 * pow(ratio, 4)) * mass * grad_kernel(position_pred_i, position_pred_j);
+        delta_position_i += (multiplier_i + multiplier_j) * mass * grad_kernel(position_pred_i, position_pred_j);
       }
       q++;
     }

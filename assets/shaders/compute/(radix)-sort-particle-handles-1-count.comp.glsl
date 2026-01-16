@@ -28,20 +28,7 @@ shared ParticleHandle l_handles[WORKGROUP_SIZE];
 shared uint l_histogram[RADIX];
 shared uint l_offsets_bitwise[RADIX];
 
-uniform float lookAhead;
-uniform uint HASH_TABLE_SIZE;
-uniform float smoothingRadius;
 uniform uint pass;
-
-uint hash(vec3 position) {
-  uint hash = uint(mod(
-    (uint(floor((position.x + 15.0) / smoothingRadius)) * 73856093) ^
-      (uint(floor((position.y + 15.0) / smoothingRadius)) * 19349663) ^
-      (uint(floor((position.z + 15.0) / smoothingRadius)) * 83492791),
-    HASH_TABLE_SIZE
-  ));
-  return hash;
-}
 
 void scan(uint l_tid) {
   uint stride = 2;

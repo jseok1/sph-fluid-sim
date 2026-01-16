@@ -30,14 +30,16 @@ uint interleave_bits(uint bits) {
   return bits;
 }
 
-uint hash(vec3 position) {
-  // Morton code for locality-preserving hashing
-  uint x = uint((position.x + 5) / h);
-  uint y = uint((position.y + 5) / h);
-  uint z = uint((position.z + 5) / h);
-  uint hash = (interleave_bits(z) << 2) | (interleave_bits(y) << 1) | (interleave_bits(x) << 0);
-  hash = uint(mod(hash, HASH_TABLE_SIZE));  // better if bitwise &
-  return hash;
+/**
+ * Return the Z-value for a neighborhood in a space-filling Z-curve.
+ */
+uint neighborhood_hash(uvec3 id) {
+  uint hash = (interleave_bits(id.z) << 2) | (interleave_bits(id.y) << 1) | (interleave_bits(id.x) << 0);
+  return hash % HASH_TABLE_SIZE;
+}
+
+uvec3 neighborhood_id(vec3 position_pred) {
+  return uvec3(floor(position_pred / h) + 1e5);
 }
 
 void main() {
@@ -51,6 +53,7 @@ void main() {
                               g_positions_pred[3 * i + 1],
                               g_positions_pred[3 * i + 2]);
 
-  handle.hash = hash(position_pred_i);
+  uvec3 id = neighborhood_id(position_pred_i);
+  handle.hash = neighborhood_hash(id);
   g_particle_handles_front[g_tid] = handle;
 }
