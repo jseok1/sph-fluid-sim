@@ -2,11 +2,11 @@
 
 layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
 
-layout(std430, binding = 4) buffer PredictedPositionsBuffer {
+layout(std430, binding = 2) buffer PredictedPositionsBuffer {
   float g_positions_pred[];
 };
 
-layout(std430, binding = 5) readonly buffer DeltaPositionsBuffer {
+layout(std430, binding = 3) readonly buffer DeltaPositionsBuffer {
   float g_delta_positions[];
 };
 

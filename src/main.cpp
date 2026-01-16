@@ -359,41 +359,32 @@ int main() {
   // (Bridson et al, 2006) fluid-solid collision
   //
   // an idea: use delta_pos, delta_vel as the back buffer?
+  //
+  // start with: cleaning up front/back buffers, apply vorticity
+  // note: computation cost increases when a method fails to maintain fluid density and particles
+  // begin to have more neighbors. initialization is still important.
+  //
+  // coloring particles with density is a helpful visual check
+  // repulsive term vs. negative pressure clamping?
 
   // particle_count should also fully saturate WORKGROUP
   static_assert(WORKGROUP_SIZE >= RADIX);
 
-  GLuint g_positions_front;
-  glCreateBuffers(1, &g_positions_front);
-  glObjectLabel(GL_BUFFER, g_positions_front, -1, "g_positions_front");
+  GLuint g_positions;
+  glCreateBuffers(1, &g_positions);
+  glObjectLabel(GL_BUFFER, g_positions, -1, "g_positions");
   glNamedBufferStorage(
-    g_positions_front, sizeof(float) * 3 * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
+    g_positions, sizeof(float) * 3 * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
   );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g_positions_front);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g_positions);
 
-  GLuint g_positions_back;
-  glCreateBuffers(1, &g_positions_back);
-  glObjectLabel(GL_BUFFER, g_positions_back, -1, "g_positions_back");
+  GLuint g_velocities;
+  glCreateBuffers(1, &g_velocities);
+  glObjectLabel(GL_BUFFER, g_velocities, -1, "g_velocities");
   glNamedBufferStorage(
-    g_positions_back, sizeof(float) * 3 * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
+    g_velocities, sizeof(float) * 3 * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
   );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, g_positions_back);
-
-  GLuint g_velocities_front;
-  glCreateBuffers(1, &g_velocities_front);
-  glObjectLabel(GL_BUFFER, g_velocities_front, -1, "g_velocities_front");
-  glNamedBufferStorage(
-    g_velocities_front, sizeof(float) * 3 * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
-  );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, g_velocities_front);
-
-  GLuint g_velocities_back;
-  glCreateBuffers(1, &g_velocities_back);
-  glObjectLabel(GL_BUFFER, g_velocities_back, -1, "g_velocities_back");
-  glNamedBufferStorage(
-    g_velocities_back, sizeof(float) * 3 * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
-  );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, g_velocities_back);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, g_velocities);
 
   GLuint g_positions_pred;
   glCreateBuffers(1, &g_positions_pred);
@@ -401,15 +392,7 @@ int main() {
   glNamedBufferStorage(
     g_positions_pred, sizeof(float) * 3 * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
   );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, g_positions_pred);
-
-  GLuint g_positions_pred_back;
-  glCreateBuffers(1, &g_positions_pred_back);
-  glObjectLabel(GL_BUFFER, g_positions_pred_back, -1, "g_positions_pred");
-  glNamedBufferStorage(
-    g_positions_pred_back, sizeof(float) * 3 * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
-  );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, g_positions_pred_back);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, g_positions_pred);
 
   GLuint g_delta_positions;
   glCreateBuffers(1, &g_delta_positions);
@@ -417,16 +400,17 @@ int main() {
   glNamedBufferStorage(
     g_delta_positions, sizeof(float) * 3 * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
   );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, g_delta_positions);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, g_delta_positions);
 
-  // TODO: reorder SSBO binding
   GLuint g_delta_velocities;
   glCreateBuffers(1, &g_delta_velocities);
   glObjectLabel(GL_BUFFER, g_delta_velocities, -1, "g_delta_velocities");
   glNamedBufferStorage(
     g_delta_velocities, sizeof(float) * 3 * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
   );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, g_delta_velocities);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, g_delta_velocities);
+
+  // g_grad_kernel
 
   GLuint g_multipliers;
   glCreateBuffers(1, &g_multipliers);
@@ -434,16 +418,16 @@ int main() {
   glNamedBufferStorage(
     g_multipliers, sizeof(float) * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
   );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, g_multipliers);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, g_multipliers);
 
   struct ParticleHandle {
     uint32_t hash;
     uint32_t index;
   };
 
-  GLuint g_particle_handles_front;
-  glCreateBuffers(1, &g_particle_handles_front);
-  glObjectLabel(GL_BUFFER, g_particle_handles_front, -1, "g_particle_handles_front");
+  GLuint g_particle_handles;
+  glCreateBuffers(1, &g_particle_handles);
+  glObjectLabel(GL_BUFFER, g_particle_handles, -1, "g_particle_handles");
   {
     std::vector<ParticleHandle> particle_handles_front(particle_count);
     for (int i = 0; i < particle_count; i++) {
@@ -451,24 +435,24 @@ int main() {
     }
 
     glNamedBufferStorage(
-      g_particle_handles_front,
+      g_particle_handles,
       sizeof(ParticleHandle) * particle_count,
       particle_handles_front.data(),
       GL_DYNAMIC_STORAGE_BIT
     );
   }
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, g_particle_handles_front);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, g_particle_handles);
 
-  GLuint g_particle_handles_back;
-  glCreateBuffers(1, &g_particle_handles_back);
-  glObjectLabel(GL_BUFFER, g_particle_handles_back, -1, "g_particle_handles_back");
+  GLuint g_particle_handles_copy;
+  glCreateBuffers(1, &g_particle_handles_copy);
+  glObjectLabel(GL_BUFFER, g_particle_handles_copy, -1, "g_particle_handles_copy");
   glNamedBufferStorage(
-    g_particle_handles_back,
+    g_particle_handles_copy,
     sizeof(ParticleHandle) * particle_count,
     nullptr,
     GL_DYNAMIC_STORAGE_BIT
   );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, g_particle_handles_back);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, g_particle_handles_copy);
 
   GLuint g_particle_handle_offsets;
   glCreateBuffers(1, &g_particle_handle_offsets);
@@ -476,7 +460,7 @@ int main() {
   glNamedBufferStorage(
     g_particle_handle_offsets, sizeof(uint32_t) * HASH_TABLE_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT
   );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, g_particle_handle_offsets);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, g_particle_handle_offsets);
 
   uint32_t total_n = 0;
   uint32_t curr_n = (particle_count + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE * RADIX;
@@ -488,7 +472,7 @@ int main() {
   glCreateBuffers(1, &g_histogram);
   glObjectLabel(GL_BUFFER, g_histogram, -1, "g_histogram");
   glNamedBufferStorage(g_histogram, sizeof(uint32_t) * total_n, nullptr, GL_DYNAMIC_STORAGE_BIT);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, g_histogram);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, g_histogram);
   glClearNamedBufferData(g_histogram, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
@@ -507,23 +491,19 @@ int main() {
   init_particles.uniform("particle_count", particle_count);
   init_particles.uniform("h", h);
   init_particles.uniform("density_rest", density_rest);
-  glDispatchCompute((uint32_t)particle_count / WORKGROUP_SIZE, 1, 1);
+  glDispatchCompute(particle_count / WORKGROUP_SIZE, 1, 1);
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
   GLuint quadVAO = quad();
   GLuint tankVAO = tank();
 
   const float delta_time = 0.0069f;
-  const float get_rid_of_this = 1.0f;
   float prev_time = glfwGetTime();
   float accumulated_time = 0.0f;
 
   uint32_t particle_sort_iters = 0;
 
   TracyGpuContext;
-
-  // Try making the positions scattered to see if it's caching.
-
   while (!glfwWindowShouldClose(window)) {
     auto origin = state.camera.origin();
     auto [u, v, w] = state.camera.basis();
@@ -545,7 +525,7 @@ int main() {
       if (state.is_resetting_simulation) {
         init_particles.use();
         init_particles.uniform("particle_count", particle_count);
-        glDispatchCompute((uint32_t)particle_count / WORKGROUP_SIZE, 1, 1);
+        glDispatchCompute(particle_count / WORKGROUP_SIZE, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         state.is_resetting_simulation = false;
       }
@@ -562,10 +542,10 @@ int main() {
 
         time_integrate_1.use();
         time_integrate_1.uniform("particle_count", particle_count);
-        time_integrate_1.uniform("delta_time", get_rid_of_this * delta_time);
+        time_integrate_1.uniform("delta_time", delta_time);
         time_integrate_1.uniform("h", h);
         time_integrate_1.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
-        glDispatchCompute((uint32_t)particle_count / 128, 1, 1);  // TODO make 128 a macro
+        glDispatchCompute(particle_count / 128, 1, 1);  // TODO make 128 a macro
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         glPopDebugGroup();
       }
@@ -584,7 +564,7 @@ int main() {
           radix_sort_particle_handles_0.uniform("particle_count", particle_count);
           radix_sort_particle_handles_0.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
           radix_sort_particle_handles_0.uniform("h", h);
-          glDispatchCompute((unsigned int)particle_count / WORKGROUP_SIZE, 1, 1);
+          glDispatchCompute(particle_count / WORKGROUP_SIZE, 1, 1);
           glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
           glPopDebugGroup();
         }
@@ -606,7 +586,7 @@ int main() {
             radix_sort_particle_handles_1.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
             radix_sort_particle_handles_1.uniform("h", h);
             radix_sort_particle_handles_1.uniform("pass", pass);
-            glDispatchCompute((uint32_t)particle_count / WORKGROUP_SIZE, 1, 1);
+            glDispatchCompute(particle_count / WORKGROUP_SIZE, 1, 1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
             glPopDebugGroup();
           }
@@ -619,7 +599,7 @@ int main() {
 
             radix_sort_particle_handles_2.use();
             curr_n = ceil(static_cast<float>(particle_count) / WORKGROUP_SIZE) * RADIX;
-            unsigned int offset = 0;
+            uint32_t offset = 0;
             while (curr_n > 1) {
               radix_sort_particle_handles_2.uniform("offset", (unsigned int)offset);
               radix_sort_particle_handles_2.uniform("g_offsets_size", (unsigned int)total_n);
@@ -642,7 +622,7 @@ int main() {
             radix_sort_particle_handles_3.use();
             radix_sort_particle_handles_3.uniform("pass", pass);
             radix_sort_particle_handles_3.uniform("particle_count", (unsigned int)particle_count);
-            glDispatchCompute((uint32_t)particle_count / WORKGROUP_SIZE, 1, 1);
+            glDispatchCompute(particle_count / WORKGROUP_SIZE, 1, 1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
             glPopDebugGroup();
           }
@@ -664,14 +644,13 @@ int main() {
 
         compute_particle_handle_offsets.use();
         compute_particle_handle_offsets.uniform("particle_count", particle_count);
-        glDispatchCompute((uint32_t)particle_count / WORKGROUP_SIZE, 1, 1);
+        glDispatchCompute(particle_count / WORKGROUP_SIZE, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         glPopDebugGroup();
       }
 
       // physics update
       // --------------
-
       uint32_t iters = 4;
       for (uint32_t iter = 0; iter < iters; iter++) {
         {
@@ -684,7 +663,7 @@ int main() {
           time_integrate_2_1.uniform("h", h);
           time_integrate_2_1.uniform("density_rest", density_rest);
           time_integrate_2_1.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
-          glDispatchCompute((uint32_t)particle_count / 128, 1, 1);
+          glDispatchCompute(particle_count / 128, 1, 1);
           glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
           glPopDebugGroup();
         }
@@ -702,7 +681,7 @@ int main() {
           time_integrate_2_2.uniform("tank_length", tank_length);
           time_integrate_2_2.uniform("tank_width", tank_width);
           time_integrate_2_2.uniform("tank_height", tank_height);
-          glDispatchCompute((uint32_t)particle_count / 128, 1, 1);
+          glDispatchCompute(particle_count / 128, 1, 1);
           glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
           glPopDebugGroup();
         }
@@ -713,7 +692,7 @@ int main() {
 
           time_integrate_2_3.use();
           time_integrate_2_3.uniform("particle_count", particle_count);
-          glDispatchCompute((uint32_t)particle_count / 128, 1, 1);
+          glDispatchCompute(particle_count / 128, 1, 1);
           glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
           glPopDebugGroup();
         }
@@ -725,8 +704,8 @@ int main() {
 
         time_integrate_3.use();
         time_integrate_3.uniform("particle_count", particle_count);
-        time_integrate_3.uniform("delta_time", get_rid_of_this * delta_time);
-        glDispatchCompute((uint32_t)particle_count / 128, 1, 1);
+        time_integrate_3.uniform("delta_time", delta_time);
+        glDispatchCompute(particle_count / 128, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         glPopDebugGroup();
       }
@@ -741,7 +720,7 @@ int main() {
         time_integrate_4.uniform("h", h);
         time_integrate_4.uniform("density_rest", density_rest);
         time_integrate_4.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
-        glDispatchCompute((uint32_t)particle_count / 128, 1, 1);
+        glDispatchCompute(particle_count / 128, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         glPopDebugGroup();
       }
@@ -752,7 +731,7 @@ int main() {
 
         time_integrate_5.use();
         time_integrate_5.uniform("particle_count", particle_count);
-        glDispatchCompute((uint32_t)particle_count / 128, 1, 1);
+        glDispatchCompute(particle_count / 128, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         glPopDebugGroup();
       }
@@ -761,7 +740,7 @@ int main() {
       // 30-40 ms without
       // 2 + 5 ms with (for sorting every 10 frames)
       // This makes a huge difference.
-      if (particle_sort_iters == 1) {  // anywhere between 1-100 time steps is recommended
+      if (particle_sort_iters == 8) {  // anywhere between 1-100 time steps is recommended
         // sort particles (helps coalesce reads/writes into GPU memory)
         // ------------------------------------------------------------
         {
@@ -770,20 +749,19 @@ int main() {
 
           sort_particles.use();
           sort_particles.uniform("particle_count", particle_count);
-          glDispatchCompute((uint32_t)particle_count / WORKGROUP_SIZE, 1, 1);
+          glDispatchCompute(particle_count / WORKGROUP_SIZE, 1, 1);
           glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
+          // reuse g_delta_positions and g_delta_positions as g_positions_copy and g_velocities_copy
+          // for double buffering
           glCopyNamedBufferSubData(
-            g_positions_back, g_positions_front, 0, 0, sizeof(float) * 3 * particle_count
+            g_delta_positions, g_positions, 0, 0, sizeof(float) * 3 * particle_count
           );
           glCopyNamedBufferSubData(
-            g_velocities_back, g_velocities_front, 0, 0, sizeof(float) * 3 * particle_count
+            g_delta_velocities, g_velocities, 0, 0, sizeof(float) * 3 * particle_count
           );
           glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
           glPopDebugGroup();
-
-          // you could front-back the predicted positions buffer here and move this right after
-          // radix sort
         }
 
         particle_sort_iters = 0;
@@ -795,7 +773,6 @@ int main() {
       break;  // TODO: REMOVE THIS (this limits 1 physics update per frame)
     }
 
-    // glClearColor(0.6f, 0.88f, 1.0f, 1.0f);
     glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -808,7 +785,7 @@ int main() {
       particleShader.uniform("camera.u", u);
       particleShader.uniform("camera.v", v);
       particleShader.uniform("camera.w", w);
-      particleShader.uniform("particle_count", (uint32_t)particle_count);
+      particleShader.uniform("particle_count", particle_count);
 
       glBindVertexArray(quadVAO);
       glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, particle_count);
@@ -836,15 +813,14 @@ int main() {
     FrameMark;
   }
 
-  glDeleteBuffers(1, &g_positions_front);
-  glDeleteBuffers(1, &g_positions_back);
-  glDeleteBuffers(1, &g_velocities_front);
-  glDeleteBuffers(1, &g_velocities_back);
+  glDeleteBuffers(1, &g_positions);
+  glDeleteBuffers(1, &g_velocities);
   glDeleteBuffers(1, &g_positions_pred);
   glDeleteBuffers(1, &g_delta_positions);
+  glDeleteBuffers(1, &g_delta_velocities);
   glDeleteBuffers(1, &g_multipliers);
-  glDeleteBuffers(1, &g_particle_handles_front);
-  glDeleteBuffers(1, &g_particle_handles_back);
+  glDeleteBuffers(1, &g_particle_handles);
+  glDeleteBuffers(1, &g_particle_handles_copy);
   glDeleteBuffers(1, &g_particle_handle_offsets);
   glDeleteBuffers(1, &g_histogram);
   glDeleteBuffers(1, &g_debug);

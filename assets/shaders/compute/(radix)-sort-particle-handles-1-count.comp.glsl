@@ -11,15 +11,15 @@ struct ParticleHandle {
   uint index;
 };
 
-layout(std430, binding = 7) buffer ParticleHandlesFrontBuffer {
-  ParticleHandle g_particle_handles_front[];
+layout(std430, binding = 6) buffer ParticleHandlesFrontBuffer {
+  ParticleHandle g_particle_handles[];
 };
 
-layout(std430, binding = 8) buffer ParticleHandlesBackBuffer {
-  ParticleHandle g_particle_handles_back[];
+layout(std430, binding = 7) buffer ParticleHandlesBackBuffer {
+  ParticleHandle g_particle_handles_copy[];
 };
 
-layout(std430, binding = 10) buffer HistogramBuffer {
+layout(std430, binding = 9) buffer HistogramBuffer {
   uint g_histogram[];
 };
 
@@ -90,7 +90,7 @@ void main() {
   // TODO: it's actually more efficient to handle 4 elements per invocation instead of just 1
 
   // 0. copy into local memory (and ping-pong buffers)
-  l_handles[l_tid] = (pass & 0x1) == 0 ? g_particle_handles_front[g_tid] : g_particle_handles_back[g_tid];
+  l_handles[l_tid] = (pass & 0x1) == 0 ? g_particle_handles[g_tid] : g_particle_handles_copy[g_tid];
 
   // 1. local radix sort on digit
   for (uint i = 0; i < RADIX_SIZE; i++) {
@@ -125,8 +125,8 @@ void main() {
 
   // 4. copy locally sorted values to global memory
   if ((pass & 0x1) == 0) {
-    g_particle_handles_front[g_tid] = l_handles[l_tid];
+    g_particle_handles[g_tid] = l_handles[l_tid];
   } else {
-    g_particle_handles_back[g_tid] = l_handles[l_tid];
+    g_particle_handles_copy[g_tid] = l_handles[l_tid];
   }
 }

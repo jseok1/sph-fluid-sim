@@ -4,7 +4,7 @@
 
 layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
-layout(std430, binding = 4) readonly buffer PredictedPositionsBuffer {
+layout(std430, binding = 2) readonly buffer PredictedPositionsBuffer {
   float g_positions_pred[];
 };
 
@@ -13,8 +13,8 @@ struct ParticleHandle {
   uint index;
 };
 
-layout(std430, binding = 7) buffer ParticleHandlesFrontBuffer {
-  ParticleHandle g_particle_handles_front[];
+layout(std430, binding = 6) buffer ParticleHandlesFrontBuffer {
+  ParticleHandle g_particle_handles[];
 };
 
 uniform uint particle_count;
@@ -46,7 +46,7 @@ void main() {
   uint g_tid = gl_GlobalInvocationID.x;
   if (g_tid >= particle_count) return;
 
-  ParticleHandle handle = g_particle_handles_front[g_tid];
+  ParticleHandle handle = g_particle_handles[g_tid];
 
   uint i = handle.index;
   vec3 position_pred_i = vec3(g_positions_pred[3 * i + 0],
@@ -55,5 +55,5 @@ void main() {
 
   uvec3 id = neighborhood_id(position_pred_i);
   handle.hash = neighborhood_hash(id);
-  g_particle_handles_front[g_tid] = handle;
+  g_particle_handles[g_tid] = handle;
 }

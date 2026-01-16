@@ -2,11 +2,11 @@
 
 layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
 
-layout(std430, binding = 4) readonly buffer PredictedPositionsBuffer {
+layout(std430, binding = 2) readonly buffer PredictedPositionsBuffer {
   float g_positions_pred[];
 };
 
-layout(std430, binding = 6) buffer MultipliersBuffer {
+layout(std430, binding = 5) buffer MultipliersBuffer {
   float g_multipliers[];
 };
 
@@ -15,11 +15,11 @@ struct ParticleHandle {
   uint index;
 };
 
-layout(std430, binding = 7) readonly buffer ParticleHandlesFrontBuffer {
-  ParticleHandle g_particle_handles_front[];
+layout(std430, binding = 6) readonly buffer ParticleHandlesFrontBuffer {
+  ParticleHandle g_particle_handles[];
 };
 
-layout(std430, binding = 9) readonly buffer ParticleHandleOffsetsBuffer {
+layout(std430, binding = 8) readonly buffer ParticleHandleOffsetsBuffer {
   uint g_particle_handle_offsets[];
 };
 
@@ -119,8 +119,8 @@ void main() {
     uvec3 id = neighborhood_id(position_pred_i);
     uint hash = neighborhood_hash(id + neighborhoods[p]);
     uint q = g_particle_handle_offsets[hash];
-    while (q < particle_count && g_particle_handles_front[q].hash == hash) {
-      uint j = g_particle_handles_front[q].index;
+    while (q < particle_count && g_particle_handles[q].hash == hash) {
+      uint j = g_particle_handles[q].index;
       if (j != i) {
         vec3 position_pred_j = vec3(g_positions_pred[3 * j + 0],
                                     g_positions_pred[3 * j + 1],

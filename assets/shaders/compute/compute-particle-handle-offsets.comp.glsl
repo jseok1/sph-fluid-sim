@@ -9,11 +9,11 @@ struct ParticleHandle {
   uint index;
 };
 
-layout(std430, binding = 7) readonly buffer ParticleHandlesFrontBuffer {
-  ParticleHandle g_particle_handles_front[];
+layout(std430, binding = 6) readonly buffer ParticleHandlesFrontBuffer {
+  ParticleHandle g_particle_handles[];
 };
 
-layout(std430, binding = 9) buffer ParticleHandleOffsetsBuffer {
+layout(std430, binding = 8) buffer ParticleHandleOffsetsBuffer {
   uint g_particle_handle_offsets[];
 };
 
@@ -25,9 +25,9 @@ void main() {
 
   uint i = g_tid;
 
-  uint hash = g_particle_handles_front[i].hash;
+  uint hash = g_particle_handles[i].hash;
 
-  if (i == 0 || hash != g_particle_handles_front[i - 1].hash) {
+  if (i == 0 || hash != g_particle_handles[i - 1].hash) {
     g_particle_handle_offsets[hash] = i;
   }
 }

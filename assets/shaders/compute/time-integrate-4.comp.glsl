@@ -2,15 +2,15 @@
 
 layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
 
-layout(std430, binding = 0) readonly buffer PositionsFrontBuffer {
-  float g_positions_front[];
+layout(std430, binding = 0) readonly buffer PositionsBuffer {
+  float g_positions[];
 };
 
-layout(std430, binding = 2) readonly buffer VelocitiesFrontBuffer {
-  float g_velocities_front[];
+layout(std430, binding = 1) readonly buffer VelocitiesBuffer {
+  float g_velocities[];
 };
 
-layout(std430, binding = 12) buffer DeltaVelocitiesBuffer {
+layout(std430, binding = 4) buffer DeltaVelocitiesBuffer {
   float g_delta_velocities[];
 };
 
@@ -19,11 +19,11 @@ struct ParticleHandle {
   uint index;
 };
 
-layout(std430, binding = 7) readonly buffer ParticleHandlesFrontBuffer {
-  ParticleHandle g_particle_handles_front[];
+layout(std430, binding = 6) readonly buffer ParticleHandlesFrontBuffer {
+  ParticleHandle g_particle_handles[];
 };
 
-layout(std430, binding = 9) readonly buffer ParticleHandleOffsetsBuffer {
+layout(std430, binding = 8) readonly buffer ParticleHandleOffsetsBuffer {
   uint g_particle_handle_offsets[];
 };
 
@@ -100,29 +100,30 @@ void main() {
   if (g_tid >= particle_count) return;
 
   uint i = g_tid;
-  vec3 position_i = vec3(g_positions_front[3 * i + 0],
-                         g_positions_front[3 * i + 1],
-                         g_positions_front[3 * i + 2]);
-  vec3 velocity_i = vec3(g_velocities_front[3 * i + 0],
-                         g_velocities_front[3 * i + 1],
-                         g_velocities_front[3 * i + 2]);
+  vec3 position_i = vec3(g_positions[3 * i + 0],
+                         g_positions[3 * i + 1],
+                         g_positions[3 * i + 2]);
+  vec3 velocity_i = vec3(g_velocities[3 * i + 0],
+                         g_velocities[3 * i + 1],
+                         g_velocities[3 * i + 2]);
 
   // do I need actual densities here (instead of density_rest)?
+  vec3 vorticity_i = vec3(0.0);
 
   vec3 delta_velocity_i = vec3(0.0);
   for (uint p = 0; p < 27; p++) {
     uvec3 id = neighborhood_id(position_i);
     uint hash = neighborhood_hash(id + neighborhoods[p]);
     uint q = g_particle_handle_offsets[hash];
-    while (q < particle_count && g_particle_handles_front[q].hash == hash) {
-      uint j = g_particle_handles_front[q].index;
+    while (q < particle_count && g_particle_handles[q].hash == hash) {
+      uint j = g_particle_handles[q].index;
       if (j != i) {
-        vec3 position_j = vec3(g_positions_front[3 * j + 0],
-                               g_positions_front[3 * j + 1],
-                               g_positions_front[3 * j + 2]);
-        vec3 velocity_j = vec3(g_velocities_front[3 * j + 0],
-                               g_velocities_front[3 * j + 1],
-                               g_velocities_front[3 * j + 2]);
+        vec3 position_j = vec3(g_positions[3 * j + 0],
+                               g_positions[3 * j + 1],
+                               g_positions[3 * j + 2]);
+        vec3 velocity_j = vec3(g_velocities[3 * j + 0],
+                               g_velocities[3 * j + 1],
+                               g_velocities[3 * j + 2]);
 
         // artificial viscosity
         delta_velocity_i += (velocity_j - velocity_i) * mass * kernel(position_i, position_j);

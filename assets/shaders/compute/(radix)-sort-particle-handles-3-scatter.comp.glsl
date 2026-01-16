@@ -10,15 +10,15 @@ struct ParticleHandle {
   uint index;
 };
 
-layout(std430, binding = 7) buffer ParticleHandlesFrontBuffer {
-  ParticleHandle g_particle_handles_front[];
+layout(std430, binding = 6) buffer ParticleHandlesFrontBuffer {
+  ParticleHandle g_particle_handles[];
 };
 
-layout(std430, binding = 8) buffer ParticleHandlesBackBuffer {
-  ParticleHandle g_particle_handles_back[];
+layout(std430, binding = 7) buffer ParticleHandlesBackBuffer {
+  ParticleHandle g_particle_handles_copy[];
 };
 
-layout(std430, binding = 10) readonly buffer HistogramBuffer {
+layout(std430, binding = 9) readonly buffer HistogramBuffer {
   uint g_histogram[];
 };
 
@@ -33,12 +33,12 @@ void main() {
   uint wid = gl_WorkGroupID.x;
   uint WORKGROUPS = gl_NumWorkGroups.x;
 
-  ParticleHandle handle = (pass & 0x1) == 0 ? g_particle_handles_front[g_tid] : g_particle_handles_back[g_tid];
+  ParticleHandle handle = (pass & 0x1) == 0 ? g_particle_handles[g_tid] : g_particle_handles_copy[g_tid];
   uint key = handle.hash;
   uint digit = (key >> 8 * pass) & 0xFF;
 
-  if (l_tid == 0 || digit != ((((pass & 0x1) == 0 ? g_particle_handles_front[g_tid - 1].hash
-                                                : g_particle_handles_back[g_tid - 1].hash) >>
+  if (l_tid == 0 || digit != ((((pass & 0x1) == 0 ? g_particle_handles[g_tid - 1].hash
+                                                : g_particle_handles_copy[g_tid - 1].hash) >>
                                8 * pass) &
                               0xFF)) {
     l_histogram[digit] = l_tid;
@@ -60,8 +60,8 @@ void main() {
   }
 
   if ((pass & 0x1) == 0) {
-    g_particle_handles_back[l_tid - l_offset + g_offset] = handle;
+    g_particle_handles_copy[l_tid - l_offset + g_offset] = handle;
   } else {
-    g_particle_handles_front[l_tid - l_offset + g_offset] = handle;
+    g_particle_handles[l_tid - l_offset + g_offset] = handle;
   }
 }

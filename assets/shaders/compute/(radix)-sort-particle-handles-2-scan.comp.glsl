@@ -5,7 +5,7 @@
 
 layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
-layout(std430, binding = 10) buffer HistogramBuffer {
+layout(std430, binding = 9) buffer HistogramBuffer {
   uint g_histogram[];
 };
 
