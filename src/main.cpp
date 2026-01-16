@@ -302,9 +302,10 @@ int main() {
 
   RenderShader particleShader, tankShader;
   ComputeShader time_integrate_1, time_integrate_2_1, time_integrate_2_2, time_integrate_2_3,
-    time_integrate_3, radix_sort_particle_handles_0, radix_sort_particle_handles_1,
-    radix_sort_particle_handles_2, radix_sort_particle_handles_3, radixSortSwap, hashIndicesClear,
-    compute_particle_handle_offsets, init_particles, sort_particles, sortParticles2;
+    time_integrate_3, time_integrate_4, time_integrate_5, radix_sort_particle_handles_0,
+    radix_sort_particle_handles_1, radix_sort_particle_handles_2, radix_sort_particle_handles_3,
+    radixSortSwap, hashIndicesClear, compute_particle_handle_offsets, init_particles,
+    sort_particles, sortParticles2;
   try {
     particleShader.build(
       "./assets/shaders/render/particle.vert.glsl", "./assets/shaders/render/particle.frag.glsl"
@@ -318,6 +319,8 @@ int main() {
     time_integrate_2_2.build("./assets/shaders/compute/time-integrate-2.2.comp.glsl");
     time_integrate_2_3.build("./assets/shaders/compute/time-integrate-2.3.comp.glsl");
     time_integrate_3.build("./assets/shaders/compute/time-integrate-3.comp.glsl");
+    time_integrate_4.build("./assets/shaders/compute/time-integrate-4.comp.glsl");
+    time_integrate_5.build("./assets/shaders/compute/time-integrate-5.comp.glsl");
     radix_sort_particle_handles_0.build(
       "./assets/shaders/compute/(radix)-sort-particle-handles-0-hash.comp.glsl"
     );
@@ -346,7 +349,7 @@ int main() {
   densityGradient.use(0);
 
   const float h = 0.1f;
-  const uint32_t particle_count = 32 * 16 * 16;
+  const uint32_t particle_count = 32 * 32 * 32;
   const float mass = 1.0f;
   const float density_rest = 20.0f;
   const uint32_t HASH_TABLE_SIZE =
@@ -354,8 +357,8 @@ int main() {
 
   // (Green, 2008) neighbor search
   // (Bridson et al, 2006) fluid-solid collision
-
-  // explore when mass is/isn't necessary
+  //
+  // an idea: use delta_pos, delta_vel as the back buffer?
 
   // particle_count should also fully saturate WORKGROUP
   static_assert(WORKGROUP_SIZE >= RADIX);
@@ -415,6 +418,15 @@ int main() {
     g_delta_positions, sizeof(float) * 3 * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
   );
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, g_delta_positions);
+
+  // TODO: reorder SSBO binding
+  GLuint g_delta_velocities;
+  glCreateBuffers(1, &g_delta_velocities);
+  glObjectLabel(GL_BUFFER, g_delta_velocities, -1, "g_delta_velocities");
+  glNamedBufferStorage(
+    g_delta_velocities, sizeof(float) * 3 * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
+  );
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, g_delta_velocities);
 
   GLuint g_multipliers;
   glCreateBuffers(1, &g_multipliers);
@@ -714,6 +726,32 @@ int main() {
         time_integrate_3.use();
         time_integrate_3.uniform("particle_count", particle_count);
         time_integrate_3.uniform("delta_time", get_rid_of_this * delta_time);
+        glDispatchCompute((uint32_t)particle_count / 128, 1, 1);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        glPopDebugGroup();
+      }
+
+      {
+        TracyGpuZone("time-integrate-4");
+        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "time-integrate-4");
+
+        time_integrate_4.use();
+        time_integrate_4.uniform("mass", mass);
+        time_integrate_4.uniform("particle_count", particle_count);
+        time_integrate_4.uniform("h", h);
+        time_integrate_4.uniform("density_rest", density_rest);
+        time_integrate_4.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
+        glDispatchCompute((uint32_t)particle_count / 128, 1, 1);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        glPopDebugGroup();
+      }
+
+      {
+        TracyGpuZone("time-integrate-5");
+        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "time-integrate-5");
+
+        time_integrate_5.use();
+        time_integrate_5.uniform("particle_count", particle_count);
         glDispatchCompute((uint32_t)particle_count / 128, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         glPopDebugGroup();
