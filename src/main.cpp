@@ -348,10 +348,10 @@ int main() {
   Texture densityGradient{"./assets/textures/density-gradient.png"};
   densityGradient.use(0);
 
-  const float h = 0.1f;
+  const float h = 0.2f;
   const uint32_t particle_count = 32 * 32 * 32;
   const float mass = 1.0f;
-  const float density_rest = 20.0f;
+  const float density_rest = 50.0f;
   const uint32_t HASH_TABLE_SIZE =
     WORKGROUP_SIZE * 32;  // 2 * particle_count is recommended (Ihmsen et al.)
 
@@ -366,6 +366,10 @@ int main() {
   //
   // coloring particles with density is a helpful visual check
   // repulsive term vs. negative pressure clamping?
+  //
+  // TODO: move mass outside of SPH loop
+  // also check that artificial pressure, artificial viscosity, and vorticity confinement are doing
+  // things
 
   // particle_count should also fully saturate WORKGROUP
   static_assert(WORKGROUP_SIZE >= RADIX);
@@ -409,8 +413,6 @@ int main() {
     g_delta_velocities, sizeof(float) * 3 * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
   );
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, g_delta_velocities);
-
-  // g_grad_kernel
 
   GLuint g_multipliers;
   glCreateBuffers(1, &g_multipliers);
@@ -476,6 +478,14 @@ int main() {
   glClearNamedBufferData(g_histogram, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
+  GLuint g_vorticities;
+  glCreateBuffers(1, &g_vorticities);
+  glObjectLabel(GL_BUFFER, g_vorticities, -1, "g_vorticities");
+  glNamedBufferStorage(
+    g_vorticities, sizeof(float) * 3 * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
+  );
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, g_vorticities);
+
   GLuint g_debug;
   glCreateBuffers(1, &g_debug);
   glObjectLabel(GL_BUFFER, g_debug, -1, "g_debug");
@@ -497,7 +507,8 @@ int main() {
   GLuint quadVAO = quad();
   GLuint tankVAO = tank();
 
-  const float delta_time = 0.0069f;
+  // const float delta_time = 0.0069f;
+  const float delta_time = 0.016f;
   float prev_time = glfwGetTime();
   float accumulated_time = 0.0f;
 
@@ -730,7 +741,12 @@ int main() {
         glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "time-integrate-5");
 
         time_integrate_5.use();
+        time_integrate_5.uniform("mass", mass);
         time_integrate_5.uniform("particle_count", particle_count);
+        time_integrate_5.uniform("delta_time", delta_time);
+        time_integrate_5.uniform("h", h);
+        time_integrate_5.uniform("density_rest", density_rest);
+        time_integrate_5.uniform("HASH_TABLE_SIZE", HASH_TABLE_SIZE);
         glDispatchCompute(particle_count / 128, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         glPopDebugGroup();
@@ -823,6 +839,7 @@ int main() {
   glDeleteBuffers(1, &g_particle_handles_copy);
   glDeleteBuffers(1, &g_particle_handle_offsets);
   glDeleteBuffers(1, &g_histogram);
+  glDeleteBuffers(1, &g_vorticities);
   glDeleteBuffers(1, &g_debug);
 
   // TODO: also VAO, VBOs, EBOs

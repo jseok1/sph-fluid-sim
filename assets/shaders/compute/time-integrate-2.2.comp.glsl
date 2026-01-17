@@ -170,6 +170,8 @@ void main() {
 
   delta_position_i = position_i - position_pred_i;
 
+  // can I not just apply the delta_position here?
+
   g_delta_positions[3 * i + 0] = delta_position_i.x;
   g_delta_positions[3 * i + 1] = delta_position_i.y;
   g_delta_positions[3 * i + 2] = delta_position_i.z;

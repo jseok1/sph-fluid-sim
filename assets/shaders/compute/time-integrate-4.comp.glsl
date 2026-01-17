@@ -27,6 +27,10 @@ layout(std430, binding = 8) readonly buffer ParticleHandleOffsetsBuffer {
   uint g_particle_handle_offsets[];
 };
 
+layout(std430, binding = 10) buffer VorticitiesBuffer {
+  float g_vorticities[];
+};
+
 uvec3 neighborhoods[27] = {
   // clang-format off
   uvec3(-1, -1, -1),
@@ -95,6 +99,14 @@ float kernel(vec3 position_i, vec3 position_j) {
   return 315.0 / (64.0 * pi * pow(h, 9)) * residual * residual * residual;
 }
 
+vec3 grad_kernel(vec3 position_i, vec3 position_j) {
+  // SPIKY
+  float r = distance(position_i, position_j);
+  vec3 direction = r > 1e-8 ? normalize(position_i - position_j) : vec3(0.0);
+  float residual = max(0.0, h - r);
+  return -45.0 / (pi * pow(h, 6)) * residual * residual * direction;
+}
+
 void main() {
   uint g_tid = gl_GlobalInvocationID.x;
   if (g_tid >= particle_count) return;
@@ -108,9 +120,8 @@ void main() {
                          g_velocities[3 * i + 2]);
 
   // do I need actual densities here (instead of density_rest)?
-  vec3 vorticity_i = vec3(0.0);
-
   vec3 delta_velocity_i = vec3(0.0);
+  vec3 vorticity_i = vec3(0.0);
   for (uint p = 0; p < 27; p++) {
     uvec3 id = neighborhood_id(position_i);
     uint hash = neighborhood_hash(id + neighborhoods[p]);
@@ -125,16 +136,26 @@ void main() {
                                g_velocities[3 * j + 1],
                                g_velocities[3 * j + 2]);
 
+        vec3 velocity_ij = velocity_j - velocity_i;
+
         // artificial viscosity
-        delta_velocity_i += (velocity_j - velocity_i) * mass * kernel(position_i, position_j);
+        delta_velocity_i += velocity_ij * kernel(position_i, position_j);
+
+        // vorticity confinement
+        vorticity_i += cross(velocity_ij, -grad_kernel(position_i, position_j));
       }
       q++;
     }
   }
-  delta_velocity_i *= 1e-2 / density_rest;
+  delta_velocity_i *= 1e-2 * mass / density_rest;
+  vorticity_i *= mass / density_rest;
 
   g_delta_velocities[3 * i + 0] = delta_velocity_i.x;
   g_delta_velocities[3 * i + 1] = delta_velocity_i.y;
   g_delta_velocities[3 * i + 2] = delta_velocity_i.z;
+
+  g_vorticities[3 * i + 0] = vorticity_i.x;
+  g_vorticities[3 * i + 1] = vorticity_i.y;
+  g_vorticities[3 * i + 2] = vorticity_i.z;
 }
 

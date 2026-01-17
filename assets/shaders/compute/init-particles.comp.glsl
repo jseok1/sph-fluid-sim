@@ -23,7 +23,7 @@ void main() {
 
   uint i = g_tid;
 
-  float s = 2.0;  // side length of water cube (should depend on smoothing radius)
+  float s = 3.5;  // side length of water cube (should depend on smoothing radius)
   float n = ceil(pow(particle_count, 1.0 / 3.0));
   float x = mod(i, n) * s / n - s / 2.0;
   float y = floor(mod(i, n * n) / n) * s / n - s / 2.0;
