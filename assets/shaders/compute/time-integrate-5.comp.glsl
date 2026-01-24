@@ -128,7 +128,7 @@ void main() {
 
   // in the other kernel, is it better to move the velocity write to here?
 
-  vec3 eta = vec3(0.0);
+  vec3 eta_i = vec3(0.0);
   for (uint p = 0; p < 27; p++) {
     uvec3 id = neighborhood_id(position_i);
     uint hash = neighborhood_hash(id + neighborhoods[p]);
@@ -143,14 +143,17 @@ void main() {
                                 g_vorticities[3 * j + 1],
                                 g_vorticities[3 * j + 2]);
 
-        eta += (length(vorticity_j) - length(vorticity_i)) * grad_kernel(position_i, position_j);
+        eta_i += (length(vorticity_j) - length(vorticity_i)) * grad_kernel(position_i, position_j);
       }
       q++;
     }
   }
-  eta = length(eta) > 1e-8 ? normalize(eta * mass / density_rest) : vec3(0.0);
+  eta_i *= mass / density_rest;
+  
+  eta_i = length(eta_i) > 1e-8 ? normalize(eta_i) : vec3(0.0);
 
-  delta_velocity_i += delta_time * 1e-2 * cross(eta, vorticity_i);
+  delta_velocity_i += 1e-2 * delta_time * cross(eta_i, vorticity_i);
+
   velocity_i += delta_velocity_i;
 
   g_velocities[3 * i + 0] = velocity_i.x;

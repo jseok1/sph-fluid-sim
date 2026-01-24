@@ -10,8 +10,8 @@ layout(std430, binding = 3) buffer DeltaPositionsBuffer {
   float g_delta_positions[];
 };
 
-layout(std430, binding = 5) readonly buffer MultipliersBuffer {
-  float g_multipliers[];
+layout(std430, binding = 5) readonly buffer LambdasBuffer {
+  float g_lambdas[];
 };
 
 struct ParticleHandle {
@@ -134,18 +134,18 @@ void main() {
                                     g_positions_pred[3 * j + 1],
                                     g_positions_pred[3 * j + 2]);
 
-        float multiplier_i = g_multipliers[i];
-        float multiplier_j = g_multipliers[j];
+        float lambda_i = g_lambdas[i];
+        float lambda_j = g_lambdas[j];
 
         // artificial pressure
         float ratio = kernel(position_pred_i, position_pred_j) / threshold;
-        // delta_position_i += (multiplier_i + multiplier_j - 1e-4 * pow(ratio, 4)) * mass * grad_kernel(position_pred_i, position_pred_j);
-        delta_position_i += (multiplier_i + multiplier_j) * mass * grad_kernel(position_pred_i, position_pred_j);
+        delta_position_i += (lambda_i + lambda_j - 1e-6 * pow(ratio, 4)) * grad_kernel(position_pred_i, position_pred_j);
+        // delta_position_i += (lambda_i + lambda_j) * grad_kernel(position_pred_i, position_pred_j);
       }
       q++;
     }
   }
-  delta_position_i /= density_rest;
+  delta_position_i *= mass / density_rest;
 
   vec3 position_i = position_pred_i + delta_position_i;
 
@@ -169,8 +169,6 @@ void main() {
   }
 
   delta_position_i = position_i - position_pred_i;
-
-  // can I not just apply the delta_position here?
 
   g_delta_positions[3 * i + 0] = delta_position_i.x;
   g_delta_positions[3 * i + 1] = delta_position_i.y;

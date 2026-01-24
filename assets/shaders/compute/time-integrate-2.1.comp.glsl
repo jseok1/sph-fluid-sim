@@ -7,7 +7,7 @@ layout(std430, binding = 2) readonly buffer PredictedPositionsBuffer {
 };
 
 layout(std430, binding = 5) buffer MultipliersBuffer {
-  float g_multipliers[];
+  float g_lambdas[];
 };
 
 struct ParticleHandle {
@@ -112,9 +112,9 @@ void main() {
                               g_positions_pred[3 * i + 1],
                               g_positions_pred[3 * i + 2]);
 
-  float density_i = mass * kernel(position_pred_i, position_pred_i);
   vec3 grad_constraint_i = vec3(0.0);
   float grad_constraints_squared_norm = 0.0;
+  float density_i = kernel(position_pred_i, position_pred_i);
   for (uint p = 0; p < 27; p++) {
     uvec3 id = neighborhood_id(position_pred_i);
     uint hash = neighborhood_hash(id + neighborhoods[p]);
@@ -126,9 +126,9 @@ void main() {
                                     g_positions_pred[3 * j + 1],
                                     g_positions_pred[3 * j + 2]);
 
-        density_i += mass * kernel(position_pred_i, position_pred_j);
+        density_i += kernel(position_pred_i, position_pred_j);
 
-        vec3 grad_constraint_j = -mass * grad_kernel(position_pred_i, position_pred_j) / density_rest;
+        vec3 grad_constraint_j = -grad_kernel(position_pred_i, position_pred_j);
         grad_constraint_i -= grad_constraint_j;
 
         grad_constraints_squared_norm += dot(grad_constraint_j, grad_constraint_j);
@@ -137,11 +137,13 @@ void main() {
     }
   }
   grad_constraints_squared_norm += dot(grad_constraint_i, grad_constraint_i);
+  grad_constraints_squared_norm *= (mass / density_rest) * (mass / density_rest);
+  density_i *= mass;
 
   float constraint_i = density_i / density_rest - 1.0;
-  float multiplier_i = -constraint_i / (grad_constraints_squared_norm + 1e7);
+  float lambda_i = -constraint_i / (grad_constraints_squared_norm + 1e7);
 
-  g_multipliers[i] = multiplier_i;
+  g_lambdas[i] = lambda_i;
 
   g_debug[i] = density_i;
 }

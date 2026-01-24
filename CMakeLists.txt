@@ -1,13 +1,11 @@
 cmake_minimum_required(VERSION 3.15)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(sph-fluid-sim LANGUAGES CXX C)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-add_compile_definitions(_USE_MATH_DEFINES)
 
 file(GLOB_RECURSE SOURCE_FILES src/*.cpp src/*.c)
 add_executable(${PROJECT_NAME} ${SOURCE_FILES})

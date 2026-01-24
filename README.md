@@ -302,7 +302,7 @@ https://gpuopen.com/download/publications/Introduction_to_GPU_Radix_Sort.pdf
 https://www.sci.utah.edu/~csilva/papers/cgf.pdf
 
 The block size is determined
-as a multiplier of the SIMD size to exploit the full power of
+as a lambda of the SIMD size to exploit the full power of
 SIMD processing unit
 
 Blelloch:

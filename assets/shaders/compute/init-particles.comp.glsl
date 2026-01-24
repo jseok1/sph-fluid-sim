@@ -16,6 +16,7 @@ uniform float mass;
 uniform uint particle_count;
 uniform float h;
 uniform float density_rest;
+uniform uint scenario;
 
 void main() {
   uint g_tid = gl_GlobalInvocationID.x;
@@ -23,11 +24,29 @@ void main() {
 
   uint i = g_tid;
 
-  float s = 3.5;  // side length of water cube (should depend on smoothing radius)
-  float n = ceil(pow(particle_count, 1.0 / 3.0));
-  float x = mod(i, n) * s / n - s / 2.0;
-  float y = floor(mod(i, n * n) / n) * s / n - s / 2.0;
-  float z = floor(i / (n * n)) * s / n - s / 2.0;
+  float x, y, z;
+
+  if (scenario == 1) {
+    float s = 5;  // side length of water cube (should depend on smoothing radius)
+    float n = ceil(pow(particle_count, 1.0 / 3.0));
+    x = mod(i, n) * s / n - s / 2.0;
+    y = floor(mod(i, n * n) / n) * s / n - s / 2.0;
+    z = floor(i / (n * n)) * s / n - s / 2.0;
+  } else if (scenario == 2) {
+    float s = 3.5;
+
+    if (i < particle_count / 2) {
+      float n = ceil(pow(particle_count / 2, 1.0 / 3.0));
+      x = mod(i, n) * s / n - s / 2.0 - 3.0;
+      y = floor(mod(i, n * n) / n) * s / n - s / 2.0;
+      z = floor(i / (n * n)) * s / n - s / 2.0 - 0.5;
+    } else {
+      float n = ceil(pow(particle_count / 2, 1.0 / 3.0));
+      x = mod(i - particle_count / 2, n) * s / n - s / 2.0 + 3.0;
+      y = floor(mod(i - particle_count / 2, n * n) / n) * s / n - s / 2.0;
+      z = floor((i - particle_count / 2) / (n * n)) * s / n - s / 2.0 + 0.5;
+    }
+  }
 
   vec3 position_i = vec3(x, y, z);
   vec3 velocity_i = vec3(0.0);

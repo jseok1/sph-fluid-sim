@@ -147,8 +147,10 @@ void main() {
       q++;
     }
   }
-  delta_velocity_i *= 1e-2 * mass / density_rest;
+  delta_velocity_i *= mass / density_rest;
   vorticity_i *= mass / density_rest;
+
+  delta_velocity_i *= 1e-2;
 
   g_delta_velocities[3 * i + 0] = delta_velocity_i.x;
   g_delta_velocities[3 * i + 1] = delta_velocity_i.y;

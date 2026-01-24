@@ -32,9 +32,9 @@ const bool fullscreen = true;
 const float speed = 5.0f;
 const float sensitivity = 0.05f;
 
-const float tank_length = 2.0f;
-const float tank_width = 2.0f;
-const float tank_height = 2.0f;
+const float tank_length = 6.0f;
+const float tank_width = 3.0f;
+const float tank_height = 3.0f;
 
 struct State {
   bool is_moving_forward = false;
@@ -43,7 +43,7 @@ struct State {
   bool is_moving_rightward = false;
   bool is_moving_upward = false;
   bool is_moving_downward = false;
-  bool is_paused = false;
+  bool is_paused = true;
   bool is_resetting_simulation = false;
   bool is_resetting_camera = false;
 
@@ -76,6 +76,11 @@ void processKey(GLFWwindow* window, int key, int scancode, int action, int mods)
   if (action == GLFW_PRESS) {
     if (key == GLFW_KEY_ESCAPE) {
       glfwSetWindowShouldClose(window, GL_TRUE);
+      return;
+    }
+
+    if (key == GLFW_KEY_P) {
+      state.is_paused = !state.is_paused;
       return;
     }
 
@@ -348,28 +353,30 @@ int main() {
   Texture densityGradient{"./assets/textures/density-gradient.png"};
   densityGradient.use(0);
 
-  const float h = 0.2f;
-  const uint32_t particle_count = 32 * 32 * 32;
+  const uint32_t particle_count = 64 * 64 * 64;
+  const float h =
+    0.1f;  // VERY IMPORTANT: smoothing radius should be inversely proportional to particle_count
   const float mass = 1.0f;
   const float density_rest = 50.0f;
   const uint32_t HASH_TABLE_SIZE =
-    WORKGROUP_SIZE * 32;  // 2 * particle_count is recommended (Ihmsen et al.)
+    WORKGROUP_SIZE * 4096;  // 2 * particle_count is recommended (Ihmsen et al.)
+  const uint32_t scenario = 2;
 
-  // (Green, 2008) neighbor search
-  // (Bridson et al, 2006) fluid-solid collision
-  //
-  // an idea: use delta_pos, delta_vel as the back buffer?
-  //
-  // start with: cleaning up front/back buffers, apply vorticity
   // note: computation cost increases when a method fails to maintain fluid density and particles
   // begin to have more neighbors. initialization is still important.
   //
   // coloring particles with density is a helpful visual check
-  // repulsive term vs. negative pressure clamping?
   //
-  // TODO: move mass outside of SPH loop
   // also check that artificial pressure, artificial viscosity, and vorticity confinement are doing
   // things
+  //
+  // TODO:
+  // - [ ] better initialization or mass changing ~ reduce DoFs
+  // - [ ] (Bridson et al, 2006) fluid-solid collision
+  // - [ ] README
+  // - [ ] (cite Green, 2008)
+  // - [ ] radix sort with 4 elements per workgroup
+  // - [ ] imgui for live parameters
 
   // particle_count should also fully saturate WORKGROUP
   static_assert(WORKGROUP_SIZE >= RADIX);
@@ -414,13 +421,11 @@ int main() {
   );
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, g_delta_velocities);
 
-  GLuint g_multipliers;
-  glCreateBuffers(1, &g_multipliers);
-  glObjectLabel(GL_BUFFER, g_multipliers, -1, "g_multipliers");
-  glNamedBufferStorage(
-    g_multipliers, sizeof(float) * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT
-  );
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, g_multipliers);
+  GLuint g_lambdas;
+  glCreateBuffers(1, &g_lambdas);
+  glObjectLabel(GL_BUFFER, g_lambdas, -1, "g_lambdas");
+  glNamedBufferStorage(g_lambdas, sizeof(float) * particle_count, nullptr, GL_DYNAMIC_STORAGE_BIT);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, g_lambdas);
 
   struct ParticleHandle {
     uint32_t hash;
@@ -501,13 +506,13 @@ int main() {
   init_particles.uniform("particle_count", particle_count);
   init_particles.uniform("h", h);
   init_particles.uniform("density_rest", density_rest);
+  init_particles.uniform("scenario", scenario);
   glDispatchCompute(particle_count / WORKGROUP_SIZE, 1, 1);
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
   GLuint quadVAO = quad();
   GLuint tankVAO = tank();
 
-  // const float delta_time = 0.0069f;
   const float delta_time = 0.016f;
   float prev_time = glfwGetTime();
   float accumulated_time = 0.0f;
@@ -546,6 +551,8 @@ int main() {
         state.camera.rotateTo(glm::vec2(0.0, -90.0));
         state.is_resetting_camera = false;
       }
+
+      if (state.is_paused) break;
 
       {
         TracyGpuZone("time-integrate-1");
@@ -662,7 +669,7 @@ int main() {
 
       // physics update
       // --------------
-      uint32_t iters = 4;
+      uint32_t iters = 2;
       for (uint32_t iter = 0; iter < iters; iter++) {
         {
           TracyGpuZone("time-integrate-2.1");
@@ -834,7 +841,7 @@ int main() {
   glDeleteBuffers(1, &g_positions_pred);
   glDeleteBuffers(1, &g_delta_positions);
   glDeleteBuffers(1, &g_delta_velocities);
-  glDeleteBuffers(1, &g_multipliers);
+  glDeleteBuffers(1, &g_lambdas);
   glDeleteBuffers(1, &g_particle_handles);
   glDeleteBuffers(1, &g_particle_handles_copy);
   glDeleteBuffers(1, &g_particle_handle_offsets);
