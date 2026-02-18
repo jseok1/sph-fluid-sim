@@ -1,8 +1,9 @@
 # SPH Fluid Simulation
 
 <!-- https://github.com/user-attachments/assets/a33e29b2-1dcb-4b89-b545-714844991433 -->
+<!-- https://github.com/user-attachments/assets/61a6bb0c-f2a6-4dd4-bd9d-c5dfddc946a7 -->
 
-https://github.com/user-attachments/assets/61a6bb0c-f2a6-4dd4-bd9d-c5dfddc946a7
+https://github.com/user-attachments/assets/945c2d1e-21d5-45fd-8356-04c73fe3c9fd
 
 ## Introduction
 
@@ -350,6 +351,7 @@ https://ams148-spring18-01.courses.soe.ucsc.edu/system/files/attachments/note5.p
 <!-- cubic spline -->
 <!---->
 <!-- Surface tension. -->
+
 
 
 
